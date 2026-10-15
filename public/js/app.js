@@ -507,7 +507,7 @@ function renderTools() {
   renderColorSlots();
 }
 
-// Each size slot previews its size: a short diagonal line at the pen's
+// Each size slot previews its size: a short horizontal line at the pen's
 // thickness, clipped to a circle, for the pen; and the eraser's circle, a
 // dark fill with a light gray outline, for the eraser.
 function renderSizeSlots() {
@@ -588,7 +588,7 @@ function penPreview(size) {
   const clipId = `pen-clip-${size}`.replace('.', '-');
   svg.innerHTML = `
     <defs><clipPath id="${clipId}"><circle cx="14" cy="14" r="12" /></clipPath></defs>
-    <line x1="7" y1="21" x2="21" y2="7" clip-path="url(#${clipId})"
+    <line x1="6" y1="14" x2="22" y2="14" clip-path="url(#${clipId})"
       stroke="${penColor()}" stroke-width="${thickness}" stroke-linecap="round" />`;
   return svg;
 }

@@ -18,11 +18,11 @@ On the last page, a swipe to the left pulls against resistance, and a New page i
 
 Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
 
-The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are three size slots, the color slots, a plus button, the Pen, the Eraser, and the Select tool. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
+The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are the color slots, a plus button, three size slots, the Pen, the Eraser, and the Select tool. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
 
 A slot holds one value and keeps it, so the toolbar becomes your own palette. A tap on a slot selects it.
 
-The size slots belong to the selected tool. The Pen has three line widths and the Eraser has three circle sizes, and each tool remembers its own. Each size slot previews its size: a short diagonal line at the line width for the Pen, and the eraser circle, a dark fill with a light gray outline, for the Eraser. A tap on the selected size slot opens a slider with five tick marks that changes that slot's size.
+The size slots belong to the selected tool. The Pen has three line widths and the Eraser has three circle sizes, and each tool remembers its own. Each size slot previews its size: a short horizontal line at the line width for the Pen, and the eraser circle, a dark fill with a light gray outline, for the Eraser. A tap on the selected size slot opens a slider with five tick marks that changes that slot's size.
 
 The color slots show while the Pen is selected. The selected color slot shows a chevron, and a tap on it opens the color picker and saves the new color to that slot. The plus button adds a color slot, up to twelve.
 
