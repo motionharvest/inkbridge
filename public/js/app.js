@@ -29,7 +29,6 @@ const KEY = {
   code: 'inkbridge.code',
   tool: 'inkbridge.tools',
   paper: 'inkbridge.paper',
-  follow: 'inkbridge.follow',
   lastPages: 'inkbridge.lastPages',
 };
 
@@ -63,7 +62,6 @@ const els = {
   prev: $('#prev'),
   next: $('#next'),
   pageNumber: $('#page-number'),
-  follow: $('#follow'),
   status: $('#status'),
   toast: $('#toast'),
 };
@@ -71,7 +69,6 @@ const els = {
 let space = null;
 let current = { notebookId: null, pageId: null };
 let tool = loadTool();
-let follow = localStorage.getItem(KEY.follow) !== 'off';
 let peers = 1;
 const undoSteps = new Map(); // pageId -> this device's undo steps on that page
 let live = null; // the stroke this device is drawing: { pageId, strokeId, unsent: [] }
@@ -109,6 +106,8 @@ socket.on('connect', () => {
 
 socket.on('disconnect', () => setStatus());
 
+socket.on('clipboard:copied', () => toast("Another device copied a page to the computer's clipboard."));
+
 socket.on('peers', (count) => {
   peers = count;
   setStatus();
@@ -119,7 +118,9 @@ socket.on('op', (op) => {
 });
 
 socket.on('view', (view) => {
-  if (follow && space && current.pageId) openPage(view.notebookId, view.pageId, { broadcast: false });
+  // Every device follows: whichever page any device opens, the others open
+  // too, from a page or from the notebook list.
+  if (space) openPage(view.notebookId, view.pageId, { broadcast: false });
 });
 
 function loadSpace(nextSpace, view) {
@@ -281,8 +282,6 @@ function renderChrome() {
   els.pageNumber.textContent = `${index + 1} / ${notebook.pageIds.length}`;
   els.prev.disabled = index <= 0;
   board.setEdges({ first: index <= 0, last: index === notebook.pageIds.length - 1 });
-  els.follow.classList.toggle('on', follow);
-  els.follow.setAttribute('aria-pressed', String(follow));
   renderTools();
 }
 
@@ -586,21 +585,41 @@ function undo() {
 
 // --- Copy ------------------------------------------------------------------
 
+// Copy sends the page to the server, which runs on the computer and puts
+// the image on the computer's clipboard. That works from any device, with
+// or without an Inkbridge tab open on the computer. A device whose browser
+// allows clipboard writes also copies the image to its own clipboard.
 async function copyPage() {
   const page = space?.pages[current.pageId];
   if (!page) return;
-  const canvas = renderPage(page, 1);
-  const blob = new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  const blob = await new Promise((resolve) => renderPage(page, 1).toBlob(resolve, 'image/png'));
+  const [computer, here] = await Promise.all([copyToComputer(blob), copyHere(blob)]);
+  if (computer.ok) return toast("Page copied to the computer's clipboard.");
+  if (here) return toast(`Page copied here. The computer did not take it: ${computer.error}`);
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `inkbridge-${current.pageId}.png`;
+  link.click();
+  toast(`The page downloaded as a PNG. The computer did not take it: ${computer.error}`);
+}
+
+async function copyToComputer(blob) {
+  if (!socket.connected) return { ok: false, error: 'this device is offline.' };
+  const bytes = await blob.arrayBuffer();
+  return new Promise((resolve) => {
+    socket.timeout(8000).emit('clipboard:image', bytes, (err, res) => {
+      resolve(err ? { ok: false, error: 'the server did not answer.' } : res);
+    });
+  });
+}
+
+async function copyHere(blob) {
   try {
-    if (!navigator.clipboard?.write || !window.ClipboardItem) throw new Error('no clipboard');
+    if (!navigator.clipboard?.write || !window.ClipboardItem) return false;
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-    toast('Page copied. Paste it anywhere.');
+    return true;
   } catch {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(await blob);
-    link.download = `inkbridge-${current.pageId}.png`;
-    link.click();
-    toast('Clipboard is not available here, so the page downloaded as a PNG.');
+    return false;
   }
 }
 
@@ -649,11 +668,6 @@ els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider
 els.copy.onclick = copyPage;
 els.prev.onclick = () => go(-1);
 els.next.onclick = () => go(1);
-els.follow.onclick = () => {
-  follow = !follow;
-  localStorage.setItem(KEY.follow, follow ? 'on' : 'off');
-  renderChrome();
-};
 els.title.onclick = () => {
   const notebook = findNotebook(space, current.notebookId);
   const title = prompt('Rename notebook', notebook.title);

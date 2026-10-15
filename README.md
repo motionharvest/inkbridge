@@ -1,6 +1,6 @@
 # Inkbridge
 
-Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. On the computer, one keystroke copies the page as a PNG image, ready to paste into a prompt.
+Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. Copy on any device puts the page on the computer's clipboard as a PNG image, ready to paste into a prompt.
 
 The project exists to make one path fast: sketch on the iPad with the Pencil, then paste that sketch on the computer.
 
@@ -26,7 +26,7 @@ The Eraser removes only the ink inside a small circle. A ring shows the circle a
 
 Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass restores every line that pass cut.
 
-Follow is on by default. When Follow is on, a device jumps to whichever page another device in the space opens. The computer therefore shows the page you are drawing on the iPad without any input.
+Every device follows the others. When any device opens a page, every other device in the space opens the same page, from a page or from the notebook list. The computer therefore shows the page you are drawing on the iPad without any input.
 
 ## Run it
 
@@ -59,7 +59,7 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `Ctrl+=`, `Ctrl+-`, `Ctrl+0` | Zoom in, zoom out, show the whole page |
 | `→` or `Page Down` | Next page, or a new page at the end |
 | `←` or `Page Up` | Previous page |
-| `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG |
+| `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG to the computer's clipboard |
 | `E` | Switch between the Pen and the Eraser |
 | `1`, `2`, `3` | Select a size slot |
 | `[` and `]` | Make the selected size slot smaller or larger |
@@ -69,6 +69,12 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 A finger never draws. This rule keeps a resting palm from leaving marks, and it frees fingers for swipes and zoom. Zoom belongs to each device and resets when the page changes. A touch within half a second of Pencil input is ignored for the same reason.
 
 On the iPad, Safari's **Share → Add to Home Screen** opens Inkbridge full screen, without the browser's address bar.
+
+## How Copy works
+
+The server runs on the computer, so the server can reach the computer's clipboard. Copy renders the page as a 1600 by 1120 PNG on the device where you press it and sends the image to the server. The server puts the image on the computer's clipboard with `xclip` on Linux with X11, `wl-copy` on Linux with Wayland, `osascript` on macOS, or PowerShell on Windows. The computer needs no Inkbridge tab open for this.
+
+The other devices in the space show a short notice that a page went to the computer's clipboard. A device whose browser allows clipboard writes, such as the computer's own browser on `localhost`, also copies the image to its own clipboard. When neither clipboard takes the image, the page downloads as a PNG file.
 
 ## How sync works
 
@@ -108,7 +114,9 @@ These statements describe version 0.1.0.
 
 The server has no authentication. Anyone on the same network who knows a space code can open that space. Run it on a network you trust.
 
-The iPad loads the app over plain HTTP from the computer's address. Browsers allow clipboard writes only on secure pages, so Copy on the iPad downloads a PNG file. Copy on the computer uses `localhost`, which browsers treat as secure, so it writes to the clipboard.
+Copy reaches the clipboard of the one computer that runs the server. A second computer in the same space does not receive the image on its clipboard. The iPad's own clipboard does not receive it either, because the iPad loads the app over plain HTTP, and browsers allow clipboard writes only on secure pages.
+
+The Linux clipboard path is verified with `xclip` on X11. The macOS, Windows, and Wayland paths are written but not yet run.
 
 Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, cutting a gap in one line with the Eraser, restoring the line with Undo, adding and editing color slots, and zooming with `Ctrl+=` while drawing stays under the pointer. On the iPad, the user drew with the Pencil and saw the ink sync to the computer. Pinch zoom on the iPad is not yet tested on a device.
 
