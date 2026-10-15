@@ -12,9 +12,11 @@ A notebook holds pages. Swipe a finger from right to left to go to the next page
 
 Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
 
-The toolbar has eight ink colors, a custom color picker, four line widths, an Eraser, and Undo.
+The toolbar has a Pen, an Eraser, one size button, ink colors, and Undo. The ink colors show only while the Pen is selected: eight presets and a custom color picker.
 
-The Eraser removes only the ink inside a small circle. A ring shows the circle at the pointer while the Eraser is on. A pass through the middle of a line splits it into two lines, and the rest of the line stays. Choosing a color or a line width switches back to the pen.
+The size button previews the selected tool at its current size. For the Pen it shows a dot of ink. For the Eraser it shows the eraser circle: a dark fill with a light gray outline. Tap the size button, or tap the selected tool a second time, to open a slider under it. Each tool remembers its own size, so switching tools brings back the size you last used with that tool. On a keyboard, `[` and `]` make the size smaller and larger.
+
+The Eraser removes only the ink inside a small circle. A ring shows the circle at the pointer while the Eraser is on. A pass through the middle of a line splits it into two lines, and the rest of the line stays.
 
 Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass restores every line that pass cut.
 
@@ -45,7 +47,8 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `→` or `Page Down` | Next page, or a new page at the end |
 | `←` or `Page Up` | Previous page |
 | `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG |
-| `E` | Switch between the pen and the Eraser |
+| `E` | Switch between the Pen and the Eraser |
+| `[` and `]` | Make the current tool smaller or larger |
 | `Ctrl+Z` or `⌘Z` | Undo |
 | `Esc` | Back to the notebook list |
 

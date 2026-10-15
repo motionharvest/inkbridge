@@ -319,19 +319,79 @@ button.icon {
   cursor: pointer;
 }
 
-.width {
-  width: 36px;
+.tool,
+.size-button {
+  width: 40px;
   padding: 0;
   display: grid;
   place-items: center;
 }
 
-.width span {
+.tool svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.size-dot {
   display: block;
   border-radius: 50%;
 }
 
-.width.active,
+.size-dot.eraser {
+  border: 1.5px solid #b9b5bf;
+}
+
+.size-menu {
+  position: fixed;
+  z-index: 10;
+  width: 240px;
+  padding: 14px 16px 10px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.5);
+}
+
+/* The arrow that points up at the size button. */
+.size-menu::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+
+#size-slider {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+  touch-action: none;
+}
+
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px 0;
+}
+
+.ticks span {
+  width: 1.5px;
+  height: 7px;
+  background: #6b6474;
+}
+
+.tool.on,
 .toggle.on {
   background: #3d3549;
   border-color: var(--accent);

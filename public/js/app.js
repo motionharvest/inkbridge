@@ -5,8 +5,12 @@ import { renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId } from './shared/ops.js';
 
 const INK_COLORS = ['#f4f1ea', '#a9a6b0', '#ffd166', '#ff8a5c', '#ff6b8b', '#6ee7b7', '#7cc4ff', '#c4a7ff'];
-const WIDTHS = [2, 4, 7, 12];
-const ERASER_RADIUS = 12; // page units
+// Each tool keeps its own size, in page units: line width for the pen,
+// circle radius for the eraser.
+const SIZES = {
+  pen: { key: 'penSize', min: 1, max: 24, step: 0.5, fallback: 4 },
+  erase: { key: 'eraserSize', min: 4, max: 60, step: 1, fallback: 12 },
+};
 const PAPERS = [
   { name: 'Plum night', color: '#231f29', dots: '#9b99a1' },
   { name: 'Graphite', color: '#1d1e21', dots: '#7d7f85' },
@@ -39,9 +43,14 @@ const els = {
   title: $('#title'),
   colors: $('#colors'),
   customColor: $('#custom-color'),
+  penTool: $('#pen-tool'),
+  eraserTool: $('#eraser-tool'),
+  sizeButton: $('#size-button'),
+  sizeDot: $('#size-button .size-dot'),
+  sizeMenu: $('#size-menu'),
+  sizeSlider: $('#size-slider'),
   widths: $('#widths'),
   undo: $('#undo'),
-  eraser: $('#eraser'),
   stage: $('#stage'),
   paperButton: $('#paper-button'),
   paperMenu: $('#paper-menu'),
@@ -56,7 +65,7 @@ const els = {
 
 let space = null;
 let current = { notebookId: null, pageId: null };
-let tool = readJson(KEY.tool) ?? { color: INK_COLORS[0], width: WIDTHS[1] };
+let tool = loadTool();
 let follow = localStorage.getItem(KEY.follow) !== 'off';
 let peers = 1;
 const history = new Map(); // pageId -> this device's undo steps on that page
@@ -263,42 +272,79 @@ function renderChrome() {
 }
 
 function renderTools() {
+  const erasing = tool.mode === 'erase';
+  els.penTool.classList.toggle('on', !erasing);
+  els.penTool.setAttribute('aria-pressed', String(!erasing));
+  els.eraserTool.classList.toggle('on', erasing);
+  els.eraserTool.setAttribute('aria-pressed', String(erasing));
+  els.colors.hidden = erasing;
+  els.customColor.parentElement.hidden = erasing;
   els.colors.replaceChildren(
     ...INK_COLORS.map((color) => {
       const swatch = document.createElement('button');
       swatch.className = 'swatch';
       swatch.style.background = color;
       swatch.title = color;
-      swatch.classList.toggle('active', tool.mode !== 'erase' && color === tool.color);
-      swatch.onclick = () => setTool({ color, mode: 'pen' });
+      swatch.classList.toggle('active', color === tool.color);
+      swatch.onclick = () => setTool({ color });
       return swatch;
     }),
   );
   els.customColor.value = tool.color;
-  els.customColor.parentElement.classList.toggle('active', tool.mode !== 'erase' && !INK_COLORS.includes(tool.color));
-  els.eraser.classList.toggle('on', tool.mode === 'erase');
-  els.eraser.setAttribute('aria-pressed', String(tool.mode === 'erase'));
-  board.setEraser(tool.mode === 'erase' ? ERASER_RADIUS : 0);
-  els.widths.replaceChildren(
-    ...WIDTHS.map((width) => {
-      const button = document.createElement('button');
-      button.className = 'width';
-      button.title = `Line width ${width}`;
-      button.classList.toggle('active', tool.mode !== 'erase' && width === tool.width);
-      const dot = document.createElement('span');
-      dot.style.width = dot.style.height = `${4 + width * 1.3}px`;
-      dot.style.background = tool.color;
-      button.append(dot);
-      button.onclick = () => setTool({ width, mode: 'pen' });
-      return button;
-    }),
-  );
+  els.customColor.parentElement.classList.toggle('active', !INK_COLORS.includes(tool.color));
+  board.setEraser(erasing ? tool.eraserSize : 0);
+  renderSize();
+}
+
+// The size button previews the current tool at its size: a dot of ink for
+// the pen, and the eraser's circle outline for the eraser.
+function renderSize() {
+  const erasing = tool.mode === 'erase';
+  const size = sizeOf();
+  const diameter = erasing ? 6 + size * 0.42 : 4 + size * 1.1;
+  els.sizeDot.style.width = els.sizeDot.style.height = `${diameter}px`;
+  els.sizeDot.style.background = erasing ? '#0d0b10' : tool.color;
+  els.sizeDot.classList.toggle('eraser', erasing);
+  els.sizeButton.title = `${erasing ? 'Eraser' : 'Pen'} size ${size}`;
+  const range = SIZES[tool.mode];
+  Object.assign(els.sizeSlider, { min: range.min, max: range.max, step: range.step });
+  els.sizeSlider.value = size;
+}
+
+function sizeOf() {
+  return tool[SIZES[tool.mode].key];
+}
+
+// Tapping the tool that is already selected opens its size slider.
+function chooseTool(mode) {
+  if (tool.mode === mode) return toggleSizeMenu();
+  els.sizeMenu.hidden = true;
+  setTool({ mode });
+}
+
+function toggleSizeMenu() {
+  if (!els.sizeMenu.hidden) return (els.sizeMenu.hidden = true);
+  els.paperMenu.hidden = true;
+  const rect = els.sizeButton.getBoundingClientRect();
+  els.sizeMenu.style.left = `${rect.left + rect.width / 2}px`;
+  els.sizeMenu.style.top = `${rect.bottom + 10}px`;
+  els.sizeMenu.hidden = false;
 }
 
 function setTool(change) {
   tool = { ...tool, ...change };
   localStorage.setItem(KEY.tool, JSON.stringify(tool));
   renderTools();
+}
+
+function loadTool() {
+  const saved = readJson(KEY.tool) ?? {};
+  return {
+    mode: saved.mode === 'erase' ? 'erase' : 'pen',
+    color: saved.color ?? INK_COLORS[0],
+    penSize: saved.penSize ?? saved.width ?? SIZES.pen.fallback,
+    eraserSize: saved.eraserSize ?? SIZES.erase.fallback,
+  };
 }
 
 function renderPaperMenu() {
@@ -331,7 +377,7 @@ function renderPaperMenu() {
 function startStroke(point) {
   if (!current.pageId) return;
   if (tool.mode === 'erase') return startErase(point);
-  const stroke = { id: newId(), color: tool.color, width: tool.width, points: [point] };
+  const stroke = { id: newId(), color: tool.color, width: tool.penSize, points: [point] };
   live = { pageId: current.pageId, strokeId: stroke.id, unsent: [] };
   if (commit({ type: 'stroke.start', pageId: current.pageId, stroke })) {
     pushHistory(current.pageId, { kind: 'draw', strokeId: stroke.id });
@@ -367,14 +413,14 @@ function endStroke() {
 // line as it was before the first cut, and which pieces came from it, so
 // undo can swap the surviving pieces back for the original lines.
 function startErase(point) {
-  erasing = { pageId: current.pageId, last: point, originals: new Map(), rootOf: new Map() };
+  erasing = { pageId: current.pageId, radius: tool.eraserSize, last: point, originals: new Map(), rootOf: new Map() };
   eraseAt(point);
 }
 
 function extendErase(points) {
   for (const point of points) {
     const [x0, y0] = erasing.last;
-    const steps = Math.ceil(Math.hypot(point[0] - x0, point[1] - y0) / (ERASER_RADIUS / 2));
+    const steps = Math.ceil(Math.hypot(point[0] - x0, point[1] - y0) / (erasing.radius / 2));
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       eraseAt([x0 + (point[0] - x0) * t, y0 + (point[1] - y0) * t]);
@@ -386,7 +432,7 @@ function extendErase(points) {
 function eraseAt(center) {
   const page = space.pages[erasing.pageId];
   if (!page) return;
-  for (const { stroke, pieces } of cutStrokes(page, center, ERASER_RADIUS)) {
+  for (const { stroke, pieces } of cutStrokes(page, center, erasing.radius)) {
     const root = erasing.rootOf.get(stroke.id) ?? stroke.id;
     if (!erasing.originals.has(root)) {
       erasing.originals.set(root, { stroke, index: page.strokes.indexOf(stroke) });
@@ -491,7 +537,10 @@ els.leave.onclick = () => {
 
 els.back.onclick = showLibrary;
 els.undo.onclick = undo;
-els.eraser.onclick = () => setTool({ mode: tool.mode === 'erase' ? 'pen' : 'erase' });
+els.penTool.onclick = () => chooseTool('pen');
+els.eraserTool.onclick = () => chooseTool('erase');
+els.sizeButton.onclick = toggleSizeMenu;
+els.sizeSlider.oninput = () => setTool({ [SIZES[tool.mode].key]: Number(els.sizeSlider.value) });
 els.copy.onclick = copyPage;
 els.prev.onclick = () => go(-1);
 els.next.onclick = () => go(1);
@@ -511,9 +560,25 @@ els.paperButton.onclick = (e) => {
   renderPaperMenu();
   els.paperMenu.hidden = !els.paperMenu.hidden;
 };
-document.addEventListener('pointerdown', (e) => {
-  if (!els.paperMenu.hidden && !els.paperMenu.contains(e.target) && e.target !== els.paperButton) els.paperMenu.hidden = true;
-});
+// A tap outside an open menu closes it. A tap on the page that closes a
+// menu does not also draw.
+document.addEventListener(
+  'pointerdown',
+  (e) => {
+    let closed = false;
+    if (!els.paperMenu.hidden && !els.paperMenu.contains(e.target) && !els.paperButton.contains(e.target)) {
+      els.paperMenu.hidden = true;
+      closed = true;
+    }
+    const onSizeControl = [els.sizeMenu, els.sizeButton, els.penTool, els.eraserTool].some((el) => el.contains(e.target));
+    if (!els.sizeMenu.hidden && !onSizeControl) {
+      els.sizeMenu.hidden = true;
+      closed = true;
+    }
+    if (closed && els.stage.contains(e.target)) e.stopPropagation();
+  },
+  { capture: true },
+);
 
 document.addEventListener('keydown', (e) => {
   if (!current.pageId || e.target.closest('input, textarea')) return;
@@ -523,6 +588,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' || e.key === 'PageDown') return go(1);
   if (e.key === 'ArrowLeft' || e.key === 'PageUp') return go(-1);
   if (e.key.toLowerCase() === 'e' && !mod) return setTool({ mode: tool.mode === 'erase' ? 'pen' : 'erase' });
+  if (e.key === '[' || e.key === ']') {
+    const range = SIZES[tool.mode];
+    const size = Math.min(range.max, Math.max(range.min, sizeOf() + (e.key === ']' ? 1 : -1) * range.step * 2));
+    return setTool({ [range.key]: size });
+  }
   if (e.key === 'Escape') return showLibrary();
 });
 
