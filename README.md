@@ -24,7 +24,7 @@ A slot holds one value and keeps it, so the toolbar becomes your own palette. A 
 
 The size slots belong to the selected tool. The Pen has three line widths and the Eraser has three circle sizes, and each tool remembers its own. Each size slot previews its size: a short horizontal line at the line width, in the toolbar's light text color, for the Pen, and the eraser circle, a dark fill with a light gray outline, for the Eraser. A tap on the selected size slot opens a slider with five tick marks that changes that slot's size.
 
-The color slots show while the Pen is selected. The selected color slot shows a chevron, and a tap on it opens the color picker and saves the new color to that slot. The plus button adds a color slot, up to twelve.
+The color slots show while the Pen is selected. The selected color slot shows a chevron, and a tap on it opens the color picker and saves the new color to that slot. The plus button adds a color slot, up to twelve. While the color picker is open, a color change repaints only that swatch, once per frame, and the color is saved when the picker settles, so the picker stays smooth.
 
 The Eraser removes only the ink inside a small circle. A ring shows the circle at the pointer while the Eraser is on. A pass through the middle of a line splits it into two lines, and the rest of the line stays.
 

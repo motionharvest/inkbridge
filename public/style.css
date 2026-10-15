@@ -291,6 +291,9 @@ button.icon {
 }
 
 .swatch {
+  /* No color transition: a swatch follows the picker as it moves. */
+  transition: none;
+  touch-action: manipulation;
   width: 28px;
   min-height: 28px;
   height: 28px;

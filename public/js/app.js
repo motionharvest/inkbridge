@@ -555,20 +555,32 @@ function renderColorSlots() {
       swatch.style.background = color;
       swatch.title = active ? 'Change this color' : color;
       if (!active) {
-        swatch.onclick = () => setTool({ colorSlot: index });
+        swatch.onclick = () => setTool({ colorSlot: index }, { render: 'colors' });
       } else {
         swatch.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>';
         const picker = document.createElement('input');
         picker.type = 'color';
         picker.value = color;
         picker.setAttribute('aria-label', 'Change this color');
+        // While the picker is open, each color change only repaints this
+        // swatch, once per frame. Nothing else is rebuilt, because rebuilding
+        // the toolbar under an open picker makes it stutter. The color is
+        // saved when the picker settles.
+        let frame = 0;
         picker.oninput = () => {
           const colors = [...tool.colors];
           colors[index] = picker.value;
-          setTool({ colors }, { keepColorSlots: true });
-          swatch.style.background = picker.value;
+          tool = { ...tool, colors };
+          if (frame) return;
+          frame = requestAnimationFrame(() => {
+            frame = 0;
+            swatch.style.background = picker.value;
+          });
         };
-        picker.onchange = () => renderTools();
+        picker.onchange = () => {
+          swatch.style.background = picker.value;
+          saveTool();
+        };
         swatch.append(picker);
       }
       slot.append(swatch);
@@ -580,7 +592,7 @@ function renderColorSlots() {
 function addColor() {
   if (tool.colors.length >= MAX_COLORS) return;
   const unused = NEW_COLORS.find((c) => !tool.colors.includes(c)) ?? penColor();
-  setTool({ colors: [...tool.colors, unused], colorSlot: tool.colors.length });
+  setTool({ colors: [...tool.colors, unused], colorSlot: tool.colors.length }, { render: 'colors' });
 }
 
 function penPreview(size) {
@@ -644,13 +656,18 @@ function setSlots(mode, { slot, size }) {
   setTool({ [mode]: slots });
 }
 
-// While a color picker is open, re-rendering the color slots would remove
-// the picker, so color edits skip that step until the picker closes.
-function setTool(change, { keepColorSlots = false } = {}) {
+// Saves the tool settings and redraws what changed. `render` is 'all' to
+// rebuild the whole toolbar, or 'colors' when only the color slots changed,
+// which skips the size slots and tool buttons.
+function setTool(change, { render = 'all' } = {}) {
   tool = { ...tool, ...change };
+  saveTool();
+  if (render === 'colors') renderColorSlots();
+  else renderTools();
+}
+
+function saveTool() {
   localStorage.setItem(KEY.tool, JSON.stringify(tool));
-  if (keepColorSlots) return renderSizeSlots();
-  renderTools();
 }
 
 function loadTool() {
