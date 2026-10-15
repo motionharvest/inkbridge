@@ -2,7 +2,7 @@ import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
 import { cutStrokes } from './erase.js';
 import { renderPage } from './render.js';
-import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId } from './shared/ops.js';
+import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId, PAGE } from './shared/ops.js';
 
 // The pen and the eraser each have three size slots, and the pen has color
 // slots. Tapping a slot selects it. Tapping the selected size slot opens a
@@ -49,6 +49,7 @@ const els = {
   title: $('#title'),
   penTool: $('#pen-tool'),
   eraserTool: $('#eraser-tool'),
+  selectTool: $('#select-tool'),
   sizeSlots: $('#size-slots'),
   colorSlots: $('#color-slots'),
   addColor: $('#add-color'),
@@ -73,6 +74,8 @@ let peers = 1;
 const undoSteps = new Map(); // pageId -> this device's undo steps on that page
 let live = null; // the stroke this device is drawing: { pageId, strokeId, unsent: [] }
 let erasing = null; // the eraser pass in progress; see startErase
+let selecting = null; // the selection drag in progress: { anchor }
+let selection = null; // the selected region in page units, or null
 
 const board = new Board(els.stage, {
   onStrokeStart: startStroke,
@@ -244,6 +247,7 @@ function openPage(notebookId, pageId, { broadcast = true, animate = true } = {})
   const from = current.notebookId === notebookId ? notebook.pageIds.indexOf(current.pageId) : -1;
   const to = notebook.pageIds.indexOf(pageId);
   const swap = () => {
+    setSelection(null);
     current = { notebookId, pageId };
     board.setPage(space.pages[pageId]);
     renderChrome();
@@ -287,12 +291,18 @@ function renderChrome() {
 
 function renderTools() {
   const erasing = tool.mode === 'erase';
-  els.penTool.classList.toggle('on', !erasing);
-  els.penTool.setAttribute('aria-pressed', String(!erasing));
-  els.eraserTool.classList.toggle('on', erasing);
-  els.eraserTool.setAttribute('aria-pressed', String(erasing));
+  for (const [button, mode] of [
+    [els.penTool, 'pen'],
+    [els.eraserTool, 'erase'],
+    [els.selectTool, 'select'],
+  ]) {
+    button.classList.toggle('on', tool.mode === mode);
+    button.setAttribute('aria-pressed', String(tool.mode === mode));
+  }
   board.setEraser(erasing ? eraserSize() : 0);
-  renderSizeSlots();
+  board.setSelecting(tool.mode === 'select');
+  els.sizeSlots.hidden = tool.mode === 'select';
+  if (tool.mode !== 'select') renderSizeSlots();
   renderColorSlots();
 }
 
@@ -325,9 +335,9 @@ function renderSizeSlots() {
 // The selected color slot carries a chevron, and a color input covers the
 // whole swatch, so a second tap anywhere on it opens the picker.
 function renderColorSlots() {
-  const erasing = tool.mode === 'erase';
-  els.colorSlots.hidden = erasing;
-  els.addColor.hidden = erasing || tool.colors.length >= MAX_COLORS;
+  const penOff = tool.mode !== 'pen';
+  els.colorSlots.hidden = penOff;
+  els.addColor.hidden = penOff || tool.colors.length >= MAX_COLORS;
   els.colorSlots.replaceChildren(
     ...tool.colors.map((color, index) => {
       const slot = document.createElement('div');
@@ -402,8 +412,11 @@ function eraserSize() {
   return tool.erase.sizes[tool.erase.slot];
 }
 
+// Choosing another tool clears the selection, so Copy never copies a
+// region the user can no longer see.
 function chooseTool(mode) {
   els.sizeMenu.hidden = true;
+  if (mode !== 'select') setSelection(null);
   setTool({ mode });
 }
 
@@ -443,7 +456,7 @@ function loadTool() {
   const valid = Array.isArray(saved.colors) && saved.colors.length >= 1 && saved.colors.length <= MAX_COLORS;
   const colors = valid ? saved.colors : DEFAULT_COLORS;
   return {
-    mode: saved.mode === 'erase' ? 'erase' : 'pen',
+    mode: ['erase', 'select'].includes(saved.mode) ? saved.mode : 'pen',
     pen: slotsFor('pen'),
     erase: slotsFor('erase'),
     colors,
@@ -481,6 +494,7 @@ function renderPaperMenu() {
 function startStroke(point) {
   if (!current.pageId) return;
   if (tool.mode === 'erase') return startErase(point);
+  if (tool.mode === 'select') return startSelect(point);
   const stroke = { id: newId(), color: penColor(), width: penSize(), points: [point] };
   live = { pageId: current.pageId, strokeId: stroke.id, unsent: [] };
   if (commit({ type: 'stroke.start', pageId: current.pageId, stroke })) {
@@ -492,6 +506,7 @@ function startStroke(point) {
 // animation frame, so a fast Pencil does not send one message per sample.
 function extendStroke(points) {
   if (erasing) return extendErase(points);
+  if (selecting) return extendSelect(points);
   if (!live) return;
   const op = { type: 'stroke.extend', pageId: live.pageId, strokeId: live.strokeId, points };
   if (!applyOp(space, op)) return;
@@ -508,8 +523,39 @@ function flushStroke() {
 
 function endStroke() {
   if (erasing) return endErase();
+  if (selecting) return endSelect();
   flushStroke();
   live = null;
+}
+
+// The selection tool drags a rectangle on the page. While a selection
+// exists, Copy copies only that region. A tap without a drag clears it.
+// The selection belongs to this device and is not synced.
+function startSelect(point) {
+  selecting = { anchor: point };
+  setSelection(rectFrom(point, point));
+}
+
+function extendSelect(points) {
+  setSelection(rectFrom(selecting.anchor, points.at(-1)));
+}
+
+function endSelect() {
+  selecting = null;
+  if (selection && (selection.width < 4 || selection.height < 4)) setSelection(null);
+}
+
+function rectFrom(a, b) {
+  const x0 = Math.max(0, Math.min(a[0], b[0]));
+  const y0 = Math.max(0, Math.min(a[1], b[1]));
+  const x1 = Math.min(PAGE.width, Math.max(a[0], b[0]));
+  const y1 = Math.min(PAGE.height, Math.max(a[1], b[1]));
+  return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+}
+
+function setSelection(rect) {
+  selection = rect;
+  board.setSelection(rect);
 }
 
 // The eraser cuts away the ink inside a small circle and leaves the rest of
@@ -592,7 +638,10 @@ function undo() {
 async function copyPage() {
   const page = space?.pages[current.pageId];
   if (!page) return;
-  const blob = await new Promise((resolve) => renderPage(page, 1).toBlob(resolve, 'image/png'));
+  // A selected region renders at twice page resolution, so a small region
+  // still pastes as a usable image.
+  const canvas = selection ? renderPage(page, 2, selection) : renderPage(page, 1);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   const [computer, here] = await Promise.all([copyToComputer(blob), copyHere(blob)]);
   if (computer.ok) return toast("Page copied to the computer's clipboard.");
   if (here) return toast(`Page copied here. The computer did not take it: ${computer.error}`);
@@ -664,6 +713,7 @@ els.undo.onclick = undo;
 els.addColor.onclick = addColor;
 els.penTool.onclick = () => chooseTool('pen');
 els.eraserTool.onclick = () => chooseTool('erase');
+els.selectTool.onclick = () => chooseTool('select');
 els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider.value) });
 els.copy.onclick = copyPage;
 els.prev.onclick = () => go(-1);
@@ -705,18 +755,19 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'c' && !String(getSelection())) return e.preventDefault(), copyPage();
   if (e.key === 'ArrowRight' || e.key === 'PageDown') return go(1);
   if (e.key === 'ArrowLeft' || e.key === 'PageUp') return go(-1);
-  if (e.key.toLowerCase() === 'e' && !mod) return setTool({ mode: tool.mode === 'erase' ? 'pen' : 'erase' });
-  if (e.key === '[' || e.key === ']') {
+  if (e.key.toLowerCase() === 'e' && !mod) return chooseTool(tool.mode === 'erase' ? 'pen' : 'erase');
+  if (e.key.toLowerCase() === 's' && !mod) return chooseTool(tool.mode === 'select' ? 'pen' : 'select');
+  if ((e.key === '[' || e.key === ']') && tool.mode !== 'select') {
     const range = SIZES[tool.mode];
     const current = tool.mode === 'erase' ? eraserSize() : penSize();
     const size = Math.min(range.max, Math.max(range.min, current + (e.key === ']' ? 1 : -1) * range.step * 2));
     return setSlots(tool.mode, { size });
   }
-  if (['1', '2', '3'].includes(e.key) && !mod) return setSlots(tool.mode, { slot: Number(e.key) - 1 });
+  if (['1', '2', '3'].includes(e.key) && !mod && tool.mode !== 'select') return setSlots(tool.mode, { slot: Number(e.key) - 1 });
   if (mod && (e.key === '=' || e.key === '+')) return e.preventDefault(), board.zoomBy(1.25);
   if (mod && e.key === '-') return e.preventDefault(), board.zoomBy(0.8);
   if (mod && e.key === '0') return e.preventDefault(), board.zoomReset();
-  if (e.key === 'Escape') return showLibrary();
+  if (e.key === 'Escape') return selection ? setSelection(null) : showLibrary();
 });
 
 function iconButton(label, text, onclick) {

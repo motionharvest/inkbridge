@@ -48,6 +48,11 @@ export class Board {
     this.edges = { first: true, last: true };
     this.pull = createPullIndicator();
     stage.append(this.pull);
+    this.selection = null;
+    this.selectionBox = document.createElement('div');
+    this.selectionBox.className = 'selection';
+    this.selectionBox.hidden = true;
+    stage.append(this.selectionBox);
     this.ring = document.createElement('div');
     this.ring.className = 'eraser-ring';
     this.ring.hidden = true;
@@ -134,6 +139,31 @@ export class Board {
     if (!radius) this.ring.hidden = true;
   }
 
+  setSelecting(on) {
+    this.stage.classList.toggle('selecting', on);
+  }
+
+  // Shows a rectangle, in page units, over the page. Null hides it. The box
+  // is placed again on every redraw, so it stays on its region through zoom.
+  setSelection(rect) {
+    this.selection = rect;
+    this.placeSelection();
+  }
+
+  placeSelection() {
+    const rect = this.selection;
+    this.selectionBox.hidden = !rect;
+    if (!rect) return;
+    const s = this.scale;
+    const o = this.origin();
+    Object.assign(this.selectionBox.style, {
+      left: `${o.x + rect.x * s}px`,
+      top: `${o.y + rect.y * s}px`,
+      width: `${rect.width * s}px`,
+      height: `${rect.height * s}px`,
+    });
+  }
+
   showRing(e) {
     if (!this.eraserRadius || e.pointerType === 'touch') return;
     const size = this.eraserRadius * 2 * this.scale;
@@ -198,6 +228,7 @@ export class Board {
     ink.clip();
     this.inkClipped = true;
     drawStrokes(ink, this.page);
+    this.placeSelection();
   }
 
   // Redraws once before the next frame, however many times it is asked.

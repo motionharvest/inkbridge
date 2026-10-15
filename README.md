@@ -14,7 +14,7 @@ On the last page, a swipe to the left pulls against resistance, and a New page i
 
 Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
 
-The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are three size slots, the color slots, a plus button, the Pen, and the Eraser. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
+The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are three size slots, the color slots, a plus button, the Pen, the Eraser, and the Select tool. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
 
 A slot holds one value and keeps it, so the toolbar becomes your own palette. A tap on a slot selects it.
 
@@ -27,6 +27,8 @@ The Eraser removes only the ink inside a small circle. A ring shows the circle a
 Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass restores every line that pass cut.
 
 Every device follows the others. When any device opens a page, every other device in the space opens the same page, from a page or from the notebook list. The computer therefore shows the page you are drawing on the iPad without any input.
+
+The Select tool, a dashed square, drags a light blue rectangle over the page. While a selection exists, Copy copies only the selected region, at twice page resolution so a small region still pastes as a usable image. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The selection belongs to the device that made it and does not sync.
 
 ## Run it
 
@@ -61,10 +63,11 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `←` or `Page Up` | Previous page |
 | `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG to the computer's clipboard |
 | `E` | Switch between the Pen and the Eraser |
+| `S` | Switch between the Pen and the Select tool |
 | `1`, `2`, `3` | Select a size slot |
 | `[` and `]` | Make the selected size slot smaller or larger |
 | `Ctrl+Z` or `⌘Z` | Undo |
-| `Esc` | Back to the notebook list |
+| `Esc` | Clear the selection, or go back to the notebook list |
 
 A finger never draws. This rule keeps a resting palm from leaving marks, and it frees fingers for swipes and zoom. Zoom belongs to each device and resets when the page changes. A touch within half a second of Pencil input is ignored for the same reason.
 

@@ -67,12 +67,14 @@ export function drawStrokes(ctx, page) {
 }
 
 // Renders a page, paper included, onto a new canvas `scale` times page size.
-export function renderPage(page, scale = 1) {
+// With a region { x, y, width, height } in page units, it renders only that
+// part of the page.
+export function renderPage(page, scale = 1, region = { x: 0, y: 0, width: PAGE.width, height: PAGE.height }) {
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(PAGE.width * scale);
-  canvas.height = Math.round(PAGE.height * scale);
+  canvas.width = Math.max(1, Math.round(region.width * scale));
+  canvas.height = Math.max(1, Math.round(region.height * scale));
   const ctx = canvas.getContext('2d');
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale);
   drawPaper(ctx, page.paper);
   drawStrokes(ctx, page);
   return canvas;
