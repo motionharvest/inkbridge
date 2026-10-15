@@ -377,6 +377,10 @@ button.icon {
   touch-action: none;
 }
 
+#stage.erasing {
+  cursor: cell;
+}
+
 .sheet {
   position: relative;
   border-radius: 6px;

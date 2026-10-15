@@ -12,7 +12,11 @@ A notebook holds pages. Swipe a finger from right to left to go to the next page
 
 Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
 
-The toolbar has eight ink colors, a custom color picker, four line widths, and Undo. Undo removes the last stroke this device drew on the current page.
+The toolbar has eight ink colors, a custom color picker, four line widths, an Eraser, and Undo.
+
+The Eraser removes whole lines. Each line it touches disappears in one piece, so one pass can clear one line or several. Choosing a color or a line width switches back to the pen.
+
+Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass brings back every line that pass removed.
 
 Follow is on by default. When Follow is on, a device jumps to whichever page another device in the space opens. The computer therefore shows the page you are drawing on the iPad without any input.
 
@@ -41,6 +45,7 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `→` or `Page Down` | Next page, or a new page at the end |
 | `←` or `Page Up` | Previous page |
 | `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG |
+| `E` | Switch between the pen and the Eraser |
 | `Ctrl+Z` or `⌘Z` | Undo |
 | `Esc` | Back to the notebook list |
 
@@ -64,6 +69,7 @@ public/
   js/app.js                 state, screens, Socket.IO wiring, copy
   js/board.js               canvas sizing, Pencil and finger input, page slides
   js/render.js              paper, ink, and PNG rendering
+  js/erase.js               which lines an eraser pass touches
   js/shared/ops.js          the op definitions, shared with the server
 server/
   index.js                  Express static files and Socket.IO rooms
@@ -87,6 +93,6 @@ The server has no authentication. Anyone on the same network who knows a space c
 
 The iPad loads the app over plain HTTP from the computer's address. Browsers allow clipboard writes only on secure pages, so Copy on the iPad downloads a PNG file. Copy on the computer uses `localhost`, which browsers treat as secure, so it writes to the clipboard.
 
-Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, and copying a page to the clipboard as a 1600 by 1120 PNG. iPad behavior, including Pencil pressure and finger swipes, is not yet tested on a device.
+Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, erasing one line of two, and restoring it with Undo. iPad behavior, including Pencil pressure and finger swipes, is not yet tested on a device.
 
-There is no eraser, no redo, no page reordering, and no page deletion.
+There is no partial eraser, no redo, no page reordering, and no page deletion.

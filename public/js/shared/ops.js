@@ -84,15 +84,18 @@ const handlers = {
 
   'stroke.start'(space, { pageId, stroke }) {
     const page = space.pages[pageId];
-    if (!page || !isId(stroke?.id) || findStroke(page, stroke.id)) return false;
-    const points = cleanPoints(stroke.points);
-    if (!points.length) return false;
-    page.strokes.push({
-      id: stroke.id,
-      color: isColor(stroke.color) ? stroke.color : '#ffffff',
-      width: clamp(Number(stroke.width) || 4, 0.5, 80),
-      points,
-    });
+    const clean = page && cleanStroke(page, stroke);
+    if (!clean) return false;
+    page.strokes.push(clean);
+  },
+
+  // Puts a whole stroke back at `index`. Undo uses it to restore erased ink.
+  'stroke.add'(space, { pageId, stroke, index }) {
+    const page = space.pages[pageId];
+    const clean = page && cleanStroke(page, stroke);
+    if (!clean) return false;
+    const at = Number.isInteger(index) ? clamp(index, 0, page.strokes.length) : page.strokes.length;
+    page.strokes.splice(at, 0, clean);
   },
 
   'stroke.extend'(space, { pageId, strokeId, points }) {
@@ -113,6 +116,18 @@ const handlers = {
     if (page.strokes.length === before) return false;
   },
 };
+
+function cleanStroke(page, stroke) {
+  if (!isId(stroke?.id) || findStroke(page, stroke.id)) return null;
+  const points = cleanPoints(stroke.points).slice(0, MAX_POINTS_PER_STROKE);
+  if (!points.length) return null;
+  return {
+    id: stroke.id,
+    color: isColor(stroke.color) ? stroke.color : '#ffffff',
+    width: clamp(Number(stroke.width) || 4, 0.5, 80),
+    points,
+  };
+}
 
 function newPage(page) {
   return { id: page.id, paper: cleanPaper(page.paper), strokes: [] };

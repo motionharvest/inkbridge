@@ -58,3 +58,15 @@ test('deleting a notebook deletes its pages', () => {
   assert.equal(space.notebooks.length, 0);
   assert.equal(space.pages[pageId], undefined);
 });
+
+test('stroke.add restores a stroke at its old position', () => {
+  const { space, pageId } = spaceWithNotebook();
+  const first = { id: newId(), color: '#ffffff', width: 4, points: [[0, 0, 1]] };
+  const second = { id: newId(), color: '#ffffff', width: 4, points: [[5, 5, 1]] };
+  applyOp(space, { type: 'stroke.start', pageId, stroke: first });
+  applyOp(space, { type: 'stroke.start', pageId, stroke: second });
+  applyOp(space, { type: 'stroke.remove', pageId, strokeId: first.id });
+  assert.ok(applyOp(space, { type: 'stroke.add', pageId, stroke: first, index: 0 }));
+  assert.deepEqual(space.pages[pageId].strokes.map((s) => s.id), [first.id, second.id]);
+  assert.equal(applyOp(space, { type: 'stroke.add', pageId, stroke: first, index: 0 }), false);
+});

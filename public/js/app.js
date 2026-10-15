@@ -1,5 +1,6 @@
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
+import { strokesTouching } from './erase.js';
 import { renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId } from './shared/ops.js';
 
@@ -39,6 +40,8 @@ const els = {
   customColor: $('#custom-color'),
   widths: $('#widths'),
   undo: $('#undo'),
+  eraser: $('#eraser'),
+  stage: $('#stage'),
   paperButton: $('#paper-button'),
   paperMenu: $('#paper-menu'),
   copy: $('#copy'),
@@ -55,10 +58,11 @@ let current = { notebookId: null, pageId: null };
 let tool = readJson(KEY.tool) ?? { color: INK_COLORS[0], width: WIDTHS[1] };
 let follow = localStorage.getItem(KEY.follow) !== 'off';
 let peers = 1;
-const myStrokes = new Set();
+const history = new Map(); // pageId -> this device's undo steps on that page
 let live = null; // the stroke this device is drawing: { pageId, strokeId, unsent: [] }
+let erasing = null; // the eraser gesture in progress: { pageId, last, removed: [] }
 
-const board = new Board($('#stage'), {
+const board = new Board(els.stage, {
   onStrokeStart: startStroke,
   onStrokeExtend: extendStroke,
   onStrokeEnd: endStroke,
@@ -126,6 +130,7 @@ function afterOp(op) {
       }
       break;
     case 'stroke.remove':
+    case 'stroke.add':
     case 'page.paper':
       if (onPage) board.redraw();
       break;
@@ -263,24 +268,27 @@ function renderTools() {
       swatch.className = 'swatch';
       swatch.style.background = color;
       swatch.title = color;
-      swatch.classList.toggle('active', color === tool.color);
-      swatch.onclick = () => setTool({ color });
+      swatch.classList.toggle('active', tool.mode !== 'erase' && color === tool.color);
+      swatch.onclick = () => setTool({ color, mode: 'pen' });
       return swatch;
     }),
   );
   els.customColor.value = tool.color;
-  els.customColor.parentElement.classList.toggle('active', !INK_COLORS.includes(tool.color));
+  els.customColor.parentElement.classList.toggle('active', tool.mode !== 'erase' && !INK_COLORS.includes(tool.color));
+  els.eraser.classList.toggle('on', tool.mode === 'erase');
+  els.eraser.setAttribute('aria-pressed', String(tool.mode === 'erase'));
+  els.stage.classList.toggle('erasing', tool.mode === 'erase');
   els.widths.replaceChildren(
     ...WIDTHS.map((width) => {
       const button = document.createElement('button');
       button.className = 'width';
       button.title = `Line width ${width}`;
-      button.classList.toggle('active', width === tool.width);
+      button.classList.toggle('active', tool.mode !== 'erase' && width === tool.width);
       const dot = document.createElement('span');
       dot.style.width = dot.style.height = `${4 + width * 1.3}px`;
       dot.style.background = tool.color;
       button.append(dot);
-      button.onclick = () => setTool({ width });
+      button.onclick = () => setTool({ width, mode: 'pen' });
       return button;
     }),
   );
@@ -321,15 +329,18 @@ function renderPaperMenu() {
 
 function startStroke(point) {
   if (!current.pageId) return;
+  if (tool.mode === 'erase') return startErase(point);
   const stroke = { id: newId(), color: tool.color, width: tool.width, points: [point] };
-  myStrokes.add(stroke.id);
   live = { pageId: current.pageId, strokeId: stroke.id, unsent: [] };
-  commit({ type: 'stroke.start', pageId: current.pageId, stroke });
+  if (commit({ type: 'stroke.start', pageId: current.pageId, stroke })) {
+    pushHistory(current.pageId, { kind: 'draw', strokeId: stroke.id });
+  }
 }
 
 // New points draw at once on this device and go to the others once per
 // animation frame, so a fast Pencil does not send one message per sample.
 function extendStroke(points) {
+  if (erasing) return extendErase(points);
   if (!live) return;
   const op = { type: 'stroke.extend', pageId: live.pageId, strokeId: live.strokeId, points };
   if (!applyOp(space, op)) return;
@@ -345,15 +356,63 @@ function flushStroke() {
 }
 
 function endStroke() {
+  if (erasing) return endErase();
   flushStroke();
   live = null;
 }
 
-function undo() {
-  const page = space?.pages[current.pageId];
+// The eraser removes every whole stroke its path touches. One gesture is
+// one undo step, however many strokes it removes.
+function startErase(point) {
+  erasing = { pageId: current.pageId, last: point, removed: [] };
+  eraseAlong(point, point);
+}
+
+function extendErase(points) {
+  for (const point of points) {
+    eraseAlong(erasing.last, point);
+    erasing.last = point;
+  }
+}
+
+function eraseAlong(from, to) {
+  const page = space.pages[erasing.pageId];
   if (!page) return;
-  const mine = page.strokes.findLast((s) => myStrokes.has(s.id));
-  if (mine) commit({ type: 'stroke.remove', pageId: page.id, strokeId: mine.id });
+  for (const stroke of strokesTouching(page, from, to)) {
+    const index = page.strokes.indexOf(stroke);
+    if (commit({ type: 'stroke.remove', pageId: page.id, strokeId: stroke.id })) {
+      erasing.removed.push({ stroke, index });
+    }
+  }
+}
+
+function endErase() {
+  if (erasing.removed.length) pushHistory(erasing.pageId, { kind: 'erase', removed: erasing.removed });
+  erasing = null;
+}
+
+function pushHistory(pageId, step) {
+  if (!history.has(pageId)) history.set(pageId, []);
+  history.get(pageId).push(step);
+}
+
+// Undoes this device's last step on the current page. A step that another
+// device already reversed, such as a stroke it erased, is skipped.
+function undo() {
+  const pageId = current.pageId;
+  const steps = history.get(pageId);
+  while (steps?.length) {
+    const step = steps.pop();
+    if (step.kind === 'draw') {
+      if (commit({ type: 'stroke.remove', pageId, strokeId: step.strokeId })) return;
+    } else {
+      let restored = false;
+      for (const { stroke, index } of [...step.removed].reverse()) {
+        restored = commit({ type: 'stroke.add', pageId, stroke, index }) || restored;
+      }
+      if (restored) return;
+    }
+  }
 }
 
 // --- Copy ------------------------------------------------------------------
@@ -414,6 +473,7 @@ els.leave.onclick = () => {
 
 els.back.onclick = showLibrary;
 els.undo.onclick = undo;
+els.eraser.onclick = () => setTool({ mode: tool.mode === 'erase' ? 'pen' : 'erase' });
 els.copy.onclick = copyPage;
 els.prev.onclick = () => go(-1);
 els.next.onclick = () => go(1);
@@ -444,6 +504,7 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'c' && !String(getSelection())) return e.preventDefault(), copyPage();
   if (e.key === 'ArrowRight' || e.key === 'PageDown') return go(1);
   if (e.key === 'ArrowLeft' || e.key === 'PageUp') return go(-1);
+  if (e.key.toLowerCase() === 'e' && !mod) return setTool({ mode: tool.mode === 'erase' ? 'pen' : 'erase' });
   if (e.key === 'Escape') return showLibrary();
 });
 
