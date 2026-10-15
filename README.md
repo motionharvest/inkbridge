@@ -51,6 +51,8 @@ On the first device, choose **Start a new space**. The library shows the space c
 
 Each device remembers its space and rejoins it every time the app opens. The code is kept in the browser's local storage and in the address, as `?space=123456`. Add Inkbridge to the iPad Home Screen after joining, so the icon keeps that address and opens straight into the space. **Leave** in the notebook list is the only action that forgets the space.
 
+To keep the server running all the time on Linux, run `npm run install-service`. The script writes a systemd user service, `~/.config/systemd/user/inkbridge.service`, enables it, starts it, and turns on lingering so the service starts at boot, before anyone logs in. The service restarts the server if it stops. It runs the Node binary that ran the script, so run the script again after removing that Node version. Copy and Paste reach the clipboard once the desktop session is up. `systemctl --user status inkbridge` shows the service, `journalctl --user -u inkbridge` shows its log, and `npm run uninstall-service` removes it. Stop the service before running `npm run dev`, because both use port 5180.
+
 To run the server with automatic restart on file changes, use `npm run dev`. To change the port, set `PORT`, for example `PORT=8080 npm start`.
 
 ## Input
