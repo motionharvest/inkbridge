@@ -1,6 +1,8 @@
-import { GRID, PAGE } from './shared/ops.js';
+import { GRID, PAGE, pageItems } from './shared/ops.js';
 
 const DOT_RADIUS = 1.7;
+const TEXT_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+const LINE_HEIGHT = 1.3;
 
 // All drawing functions work in page units. The caller sets the canvas
 // transform that maps page units to device pixels.
@@ -76,8 +78,72 @@ export function renderPage(page, scale = 1, region = { x: 0, y: 0, width: PAGE.w
   const ctx = canvas.getContext('2d');
   ctx.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale);
   drawPaper(ctx, page.paper);
+  drawItems(ctx, page);
   drawStrokes(ctx, page);
   return canvas;
+}
+
+// Pasted images load from the server once and stay cached. An image that
+// is still loading is skipped; when it arrives, the listeners redraw.
+const images = new Map();
+const loadListeners = new Set();
+
+export function onImageLoad(listener) {
+  loadListeners.add(listener);
+}
+
+export function loadImage(asset) {
+  let img = images.get(asset);
+  if (!img) {
+    img = new Image();
+    img.onload = () => loadListeners.forEach((listener) => listener(asset));
+    img.src = `/assets/${asset}`;
+    images.set(asset, img);
+  }
+  return img;
+}
+
+export function drawItems(ctx, page) {
+  for (const item of pageItems(page)) {
+    if (item.kind === 'image') {
+      const img = loadImage(item.asset);
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, item.x, item.y, item.width, item.height);
+    } else if (item.kind === 'text') {
+      ctx.fillStyle = item.color;
+      ctx.font = `${item.size}px ${TEXT_FONT}`;
+      ctx.textBaseline = 'top';
+      const lines = wrapText(ctx, item.text, item.width);
+      lines.forEach((line, i) => ctx.fillText(line, item.x, item.y + i * item.size * LINE_HEIGHT));
+    }
+  }
+}
+
+// Measures a text block before it is placed: the width it needs, up to
+// `maxWidth`, and the height of its wrapped lines.
+export function measureText(text, size, maxWidth) {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = `${size}px ${TEXT_FONT}`;
+  const natural = Math.max(...text.split('\n').map((line) => ctx.measureText(line).width));
+  const width = Math.min(maxWidth, Math.ceil(natural) + 2);
+  return { width, height: wrapText(ctx, text, width).length * size * LINE_HEIGHT };
+}
+
+// Breaks text at newlines, then at spaces so no line is wider than `width`.
+// A single word wider than `width` stays on its own line.
+function wrapText(ctx, text, width) {
+  const lines = [];
+  for (const paragraph of text.split('\n')) {
+    let line = '';
+    for (const word of paragraph.split(' ')) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(candidate).width > width) {
+        lines.push(line);
+        line = word;
+      } else line = candidate;
+    }
+    lines.push(line);
+  }
+  return lines;
 }
 
 function widthAt(stroke, pressure) {

@@ -48,6 +48,53 @@ export async function copyImageToClipboard(png) {
   }
 }
 
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+// Reads the clipboard of the computer that runs this server. Resolves to
+// { kind: 'image', bytes } when the clipboard holds an image, otherwise to
+// { kind: 'text', text }. Images win, because the clipboard owner that Copy
+// starts also offers an empty text.
+export async function readClipboard() {
+  if (process.platform !== 'linux') throw new Error(`Paste from the computer is not supported on ${process.platform} yet.`);
+  let list, read;
+  if (process.env.WAYLAND_DISPLAY) {
+    list = ['wl-paste', ['--list-types']];
+    read = (type) => ['wl-paste', type ? ['--type', type] : ['--no-newline']];
+  } else if (process.env.DISPLAY) {
+    list = ['xclip', ['-selection', 'clipboard', '-t', 'TARGETS', '-o']];
+    read = (type) => ['xclip', ['-selection', 'clipboard', '-t', type ?? 'UTF8_STRING', '-o']];
+  } else {
+    throw new Error('The server has no display, so it cannot reach a clipboard.');
+  }
+  const types = String(await capture(...list)).split('\n').map((t) => t.trim());
+  const image = IMAGE_TYPES.find((type) => types.includes(type));
+  if (image) return { kind: 'image', bytes: await capture(...read(image)) };
+  const text = String(await capture(...read(null)));
+  if (!text.trim()) throw new Error("The computer's clipboard is empty.");
+  return { kind: 'text', text };
+}
+
+// Runs a command and resolves to its output as a Buffer.
+function capture(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const chunks = [];
+    let stderr = '';
+    const timer = setTimeout(() => child.kill(), 5000);
+    child.stdout.on('data', (chunk) => chunks.push(chunk));
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(new Error(error.code === 'ENOENT' ? `${command} is not installed on the computer.` : error.message));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(Buffer.concat(chunks));
+      else reject(new Error(stderr.trim() || `The computer's clipboard is empty.`));
+    });
+  });
+}
+
 // Resolves when the command exits. xclip and wl-copy stay behind in the
 // background to serve the clipboard, so the wait is for exit, not for
 // their output streams to close.

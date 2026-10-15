@@ -78,3 +78,24 @@ test('page.delete closes the gap and keeps at least one page', () => {
   assert.equal(space.pages[pageId], undefined);
   assert.equal(applyOp(space, { type: 'page.delete', notebookId, pageId: second.id }), false);
 });
+
+test('pasted items are added, cleaned, and removed', () => {
+  const { space, pageId } = spaceWithNotebook();
+  const image = { id: newId(), kind: 'image', asset: `${'a'.repeat(32)}.png`, x: 10, y: 20, width: 300, height: 200 };
+  assert.ok(applyOp(space, { type: 'item.add', pageId, item: image }));
+  assert.equal(applyOp(space, { type: 'item.add', pageId, item: image }), false);
+  assert.equal(applyOp(space, { type: 'item.add', pageId, item: { ...image, id: newId(), asset: '../secret.png' } }), false);
+  const text = { id: newId(), kind: 'text', text: 'hello', x: 0, y: 0, width: 100, size: 28, color: '#ffd166', extra: 1 };
+  assert.ok(applyOp(space, { type: 'item.add', pageId, item: text }));
+  assert.equal(space.pages[pageId].items[1].extra, undefined);
+  assert.ok(applyOp(space, { type: 'item.remove', pageId, itemId: image.id }));
+  assert.deepEqual(space.pages[pageId].items.map((i) => i.id), [text.id]);
+});
+
+test('pages saved before pasting existed accept items', () => {
+  const { space, pageId } = spaceWithNotebook();
+  delete space.pages[pageId].items;
+  const text = { id: newId(), kind: 'text', text: 'old page', x: 0, y: 0, width: 100 };
+  assert.ok(applyOp(space, { type: 'item.add', pageId, item: text }));
+  assert.equal(space.pages[pageId].items.length, 1);
+});

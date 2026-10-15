@@ -1,5 +1,5 @@
 import { PAGE } from './shared/ops.js';
-import { drawPaper, drawStroke, drawStrokes } from './render.js';
+import { drawItems, drawPaper, drawStroke, drawStrokes } from './render.js';
 
 const SWIPE_DISTANCE = 70;
 const SWIPE_VELOCITY = 0.5; // px per ms
@@ -214,6 +214,14 @@ export class Board {
     paper.fillRect(0, 0, PAGE.width, PAGE.height);
     paper.restore();
     drawPaper(paper, this.page.paper);
+    // Pasted items draw on the paper canvas, under the ink, clipped to the
+    // page like the ink.
+    paper.save();
+    paper.beginPath();
+    paper.rect(0, 0, PAGE.width, PAGE.height);
+    paper.clip();
+    drawItems(paper, this.page);
+    paper.restore();
 
     // The ink context keeps the page transform and a clip to the page edge
     // between redraws, so new points can draw straight onto it.
@@ -283,6 +291,17 @@ export class Board {
     this.pull.style.setProperty('--pull', p);
     this.pull.classList.toggle('armed', p >= 1);
     this.pull.classList.toggle('visible', p > 0);
+  }
+
+  // The part of the page on screen, in page units, clipped to the page.
+  visibleRect() {
+    const s = this.scale;
+    const o = this.origin();
+    const x0 = Math.max(0, -o.x / s);
+    const y0 = Math.max(0, -o.y / s);
+    const x1 = Math.min(PAGE.width, (this.stage.clientWidth - o.x) / s);
+    const y1 = Math.min(PAGE.height, (this.stage.clientHeight - o.y) / s);
+    return { x: x0, y: y0, width: Math.max(1, x1 - x0), height: Math.max(1, y1 - y0) };
   }
 
   toPage(e) {

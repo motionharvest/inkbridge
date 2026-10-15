@@ -5,15 +5,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import { applyOp } from '../public/js/shared/ops.js';
-import { copyImageToClipboard } from './clipboard.js';
+import { AssetStore } from './assets.js';
+import { copyImageToClipboard, readClipboard } from './clipboard.js';
 import { SpaceStore } from './store.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join(root, 'data') } = {}) {
   const store = new SpaceStore(dataDir);
+  const assets = new AssetStore(path.join(dataDir, 'assets'));
   const app = express();
   app.use(express.static(path.join(root, 'public')));
+  // An asset's name is a hash of its bytes, so its contents never change.
+  app.use('/assets', express.static(assets.dir, { immutable: true, maxAge: '1y' }));
 
   const http = createServer(app);
   const io = new Server(http, { maxHttpBufferSize: 12e6 });
@@ -85,6 +89,28 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
         await copyImageToClipboard(Buffer.isBuffer(png) ? png : Buffer.from(png ?? []));
         ack?.({ ok: true });
         if (socket.data.code) socket.to(socket.data.code).emit('clipboard:copied');
+      } catch (error) {
+        ack?.({ ok: false, error: error.message });
+      }
+    });
+
+    // A device pastes an image: the server stores the bytes and answers with
+    // the asset name, which the device then puts on a page with item.add.
+    socket.on('asset:put', (bytes, ack) => {
+      try {
+        ack?.({ ok: true, asset: assets.put(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes ?? [])) });
+      } catch (error) {
+        ack?.({ ok: false, error: error.message });
+      }
+    });
+
+    // Paste from the computer: the server reads this computer's clipboard.
+    // An image is stored as an asset. Text comes back as text.
+    socket.on('clipboard:read', async (ack) => {
+      try {
+        const clip = await readClipboard();
+        if (clip.kind === 'image') ack?.({ ok: true, kind: 'image', asset: assets.put(clip.bytes) });
+        else ack?.({ ok: true, kind: 'text', text: clip.text });
       } catch (error) {
         ack?.({ ok: false, error: error.message });
       }

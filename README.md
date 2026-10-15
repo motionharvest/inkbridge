@@ -1,6 +1,6 @@
 # Inkbridge
 
-Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. Copy on any device puts the page on the computer's clipboard as a PNG image, ready to paste into a prompt.
+Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. Copy on any device puts the page on the computer's clipboard as a PNG image, ready to paste into a prompt. Paste brings an image or text onto the page, where every device sees it and you can draw on it.
 
 The project exists to make one path fast: sketch on the iPad with the Pencil, then paste that sketch on the computer.
 
@@ -34,6 +34,8 @@ Every device follows the others, in both directions. The space is always on one 
 
 The Select tool, a dashed square, drags a light blue rectangle over the page. While a selection exists, Copy copies only the selected region, at twice page resolution so a small region still pastes as a usable image. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The selection belongs to the device that made it and does not sync.
 
+Paste puts an image or a block of text on the page. A pasted item sits under the ink, so you can draw on a pasted picture and copy the result back out. `Ctrl+V` or `⌘V` pastes the clipboard of the device you press it on. The Paste button in the toolbar pastes the computer's clipboard, read by the server, so the iPad can paste what you copied on the computer. An image keeps its pixel size, shrinks to fit the part of the page on screen, and lands in the middle of it. Text takes the selected pen color and wraps at 900 page units. A second paste onto the same spot moves down and to the right. Undo removes a paste.
+
 ## Run it
 
 Inkbridge needs Node.js 20 or later.
@@ -66,6 +68,8 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `→` or `Page Down` | Next page, or a new page at the end |
 | `←` or `Page Up` | Previous page |
 | `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG to the computer's clipboard |
+| `Ctrl+V` or `⌘V` | Paste this device's clipboard onto the page |
+| The Paste button | Paste the computer's clipboard onto the page |
 | `E` | Switch between the Pen and the Eraser |
 | `S` | Switch between the Pen and the Select tool |
 | `1`, `2`, `3` | Select a size slot |
@@ -83,6 +87,12 @@ The server runs on the computer, so the server can reach the computer's clipboar
 
 The other devices in the space show a short notice that a page went to the computer's clipboard. A device whose browser allows clipboard writes, such as the computer's own browser on `localhost`, also copies the image to its own clipboard. When neither clipboard takes the image, the page downloads as a PNG file.
 
+## How Paste works
+
+A pasted image travels to the server once, over Socket.IO. The server stores it in `data/assets/`, named by a hash of its bytes, and answers with that name. The device then adds the item to the page with an op that carries only the name and the item's position and size. Every device loads the image from `/assets/<name>`. An image larger than 10 MB is first re-encoded on the device as a JPEG no larger than 3200 pixels on its longest side.
+
+The Paste button asks the server to read the computer's clipboard with `xclip` on X11 or `wl-paste` on Wayland. An image on the clipboard wins over text, because the clipboard that Copy fills also offers an empty text.
+
 ## How sync works
 
 Every change is an op: a small JSON message such as "start a stroke", "add these points", or "add a page". The file `public/js/shared/ops.js` defines every op in one function, `applyOp`.
@@ -98,12 +108,14 @@ public/
   index.html, style.css     the three screens: pair, notebook list, page
   js/app.js                 state, screens, Socket.IO wiring, copy
   js/board.js               the page view, zoom, Pencil and finger input, page slides
-  js/render.js              paper, ink, and PNG rendering
+  js/render.js              paper, pasted items, ink, and PNG rendering
   js/erase.js               clips lines against the eraser circle
   js/shared/ops.js          the op definitions, shared with the server
 server/
   index.js                  Express static files and Socket.IO rooms
   store.js                  in-memory spaces, saved to data/
+  assets.js                 pasted images, saved to data/assets/
+  clipboard.js              reads and writes the computer's clipboard
 test/                       op tests and a two-client sync test
 ```
 
@@ -127,4 +139,10 @@ On X11 the helper offers the PNG bytes as `image/png` and an empty string as tex
 
 Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, cutting a gap in one line with the Eraser, restoring the line with Undo, adding and editing color slots, and zooming with `Ctrl+=` while drawing stays under the pointer. On the iPad, the user drew with the Pencil and saw the ink sync to the computer. Pinch zoom on the iPad is not yet tested on a device.
 
-There is no redo, no page reordering, and no page deletion.
+Pasting from the computer's clipboard works on Linux only. On macOS and Windows the Paste button reports that it is not supported, and `Ctrl+V` on the computer's own browser still works.
+
+A pasted item cannot be moved, resized, or erased. Undo on the device that pasted it is the only way to remove it. Removing a page or notebook leaves its pasted images in `data/assets/`.
+
+Verified for Paste on the Linux desktop in Brave: the Paste button placed the image from the computer's clipboard on the page, ink drew over it, `Ctrl+V` pasted the same image, and both items reached the server's saved space. Pasting text and pasting on the iPad are not yet tested.
+
+There is no redo and no page reordering.

@@ -64,3 +64,19 @@ test('two devices share a space through its code', async () => {
   const saved = JSON.parse(fs.readFileSync(path.join(dataDir, `${created.space.code}.json`), 'utf8'));
   assert.equal(saved.notebooks.length, 1);
 });
+
+test('a pasted image is stored once and served by name', async () => {
+  const device = connect();
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const first = await call(device, 'asset:put', png);
+  const second = await call(device, 'asset:put', png);
+  assert.ok(first.ok);
+  assert.match(first.asset, /^[a-f0-9]{32}\.png$/);
+  assert.equal(second.asset, first.asset);
+  assert.equal((await call(device, 'asset:put', Buffer.from('not an image'))).ok, false);
+  const served = await fetch(`http://127.0.0.1:${server.port}/assets/${first.asset}`);
+  assert.deepEqual(Buffer.from(await served.arrayBuffer()), png);
+});

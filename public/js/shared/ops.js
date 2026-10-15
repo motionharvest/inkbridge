@@ -13,6 +13,11 @@ export const DEFAULT_PAPER = { color: '#231f29', dots: '#9b99a1' };
 
 const MAX_POINTS_PER_STROKE = 20000;
 const MAX_TITLE = 80;
+const MAX_TEXT = 5000;
+
+// Pasted images live as files on the server, named by a hash of their bytes.
+// An image item refers to its file by that name.
+export const ASSET = /^[a-f0-9]{32}\.(png|jpg|gif|webp)$/;
 
 export function emptySpace(code) {
   return { code, notebooks: [], pages: {} };
@@ -33,6 +38,11 @@ export function newId() {
 
 export function findNotebook(space, id) {
   return space.notebooks.find((n) => n.id === id);
+}
+
+// Pages saved before pasting existed have no items list.
+export function pageItems(page) {
+  return page.items ?? [];
 }
 
 export function findStroke(page, id) {
@@ -119,6 +129,21 @@ const handlers = {
     kept.splice(clamp(at, 0, kept.length), 0, ...added);
   },
 
+  // A pasted image or block of text. Items sit under the ink, so a pasted
+  // picture can be drawn on.
+  'item.add'(space, { pageId, item }) {
+    const page = space.pages[pageId];
+    const clean = page && cleanItem(item);
+    if (!clean || pageItems(page).some((i) => i.id === clean.id)) return false;
+    page.items = [...pageItems(page), clean];
+  },
+
+  'item.remove'(space, { pageId, itemId }) {
+    const page = space.pages[pageId];
+    if (!page || !pageItems(page).some((i) => i.id === itemId)) return false;
+    page.items = page.items.filter((i) => i.id !== itemId);
+  },
+
   'stroke.extend'(space, { pageId, strokeId, points }) {
     const page = space.pages[pageId];
     const stroke = page && findStroke(page, strokeId);
@@ -150,8 +175,35 @@ function cleanStroke(page, stroke) {
   };
 }
 
+// An item is an image { kind: 'image', asset, x, y, width, height } or a
+// text block { kind: 'text', text, x, y, width, size, color }, in page units.
+// Text wraps to `width`.
+function cleanItem(item) {
+  if (!isId(item?.id)) return null;
+  const x = clamp(Number(item.x) || 0, -PAGE.width, PAGE.width * 2);
+  const y = clamp(Number(item.y) || 0, -PAGE.height, PAGE.height * 2);
+  const width = clamp(Number(item.width) || 0, 1, PAGE.width * 2);
+  if (item.kind === 'image' && ASSET.test(item.asset)) {
+    const height = clamp(Number(item.height) || 0, 1, PAGE.height * 2);
+    return { id: item.id, kind: 'image', asset: item.asset, x, y, width, height };
+  }
+  if (item.kind === 'text' && typeof item.text === 'string' && item.text.trim()) {
+    return {
+      id: item.id,
+      kind: 'text',
+      text: item.text.slice(0, MAX_TEXT),
+      x,
+      y,
+      width,
+      size: clamp(Number(item.size) || 28, 8, 200),
+      color: isColor(item.color) ? item.color : '#ffffff',
+    };
+  }
+  return null;
+}
+
 function newPage(page) {
-  return { id: page.id, paper: cleanPaper(page.paper), strokes: [] };
+  return { id: page.id, paper: cleanPaper(page.paper), strokes: [], items: [] };
 }
 
 function cleanPaper(paper) {

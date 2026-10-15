@@ -1,8 +1,8 @@
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
 import { cutStrokes } from './erase.js';
-import { renderPage } from './render.js';
-import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId, PAGE } from './shared/ops.js';
+import { loadImage, measureText, onImageLoad, renderPage } from './render.js';
+import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
 
 // The pen and the eraser each have three size slots, and the pen has color
 // slots. Tapping a slot selects it. Tapping the selected size slot opens a
@@ -61,6 +61,7 @@ const els = {
   paperButton: $('#paper-button'),
   paperMenu: $('#paper-menu'),
   copy: $('#copy'),
+  paste: $('#paste'),
   prev: $('#prev'),
   next: $('#next'),
   pageNumber: $('#page-number'),
@@ -181,6 +182,8 @@ function afterOp(op) {
       break;
     case 'stroke.remove':
     case 'stroke.replace':
+    case 'item.add':
+    case 'item.remove':
     case 'page.paper':
       if (onPage) board.scheduleRedraw();
       break;
@@ -817,6 +820,8 @@ function undo() {
     const step = steps.pop();
     if (step.kind === 'draw') {
       if (commit({ type: 'stroke.remove', pageId, strokeId: step.strokeId })) return;
+    } else if (step.kind === 'item') {
+      if (commit({ type: 'item.remove', pageId, itemId: step.itemId })) return;
     } else {
       const op = {
         type: 'stroke.replace',
@@ -873,6 +878,106 @@ async function copyHere(blob) {
   }
 }
 
+// --- Paste -----------------------------------------------------------------
+
+// Paste puts an image or a block of text on the page as an item, under the
+// ink, so it can be drawn on and copied back out. There are two sources:
+//   Ctrl+V or ⌘V pastes this device's own clipboard;
+//   the Paste button pastes the computer's clipboard, read by the server,
+//   which is how the iPad reaches what was copied on the computer.
+// An image goes to the server first and comes back as an asset name, so the
+// op that syncs it stays small.
+const MAX_UPLOAD = 10e6;
+
+async function pasteFromComputer() {
+  if (!current.pageId) return;
+  if (!socket.connected) return toast('This device is offline.');
+  const res = await new Promise((resolve) => {
+    socket.timeout(8000).emit('clipboard:read', (err, answer) => resolve(err ? { ok: false, error: 'The server did not answer.' } : answer));
+  });
+  if (!res.ok) return toast(res.error);
+  if (res.kind === 'image') await placeImage(res.asset);
+  else placeText(res.text);
+}
+
+async function pasteEvent(e) {
+  if (!current.pageId || e.target.closest?.('input, textarea')) return;
+  const data = e.clipboardData;
+  const file = [...(data?.files ?? [])].find((f) => f.type.startsWith('image/'));
+  const text = data?.getData('text/plain');
+  if (!file && !text?.trim()) return;
+  e.preventDefault();
+  if (!file) return placeText(text);
+  if (!socket.connected) return toast('This device is offline, so the image cannot sync.');
+  const blob = file.size > MAX_UPLOAD ? await shrink(file) : file;
+  const bytes = await blob.arrayBuffer();
+  const res = await new Promise((resolve) => {
+    socket.timeout(15000).emit('asset:put', bytes, (err, answer) => resolve(err ? { ok: false, error: 'The server did not answer.' } : answer));
+  });
+  if (!res.ok) return toast(res.error);
+  await placeImage(res.asset);
+}
+
+// Re-encodes an image too large to send as a JPEG no wider or taller than
+// 3200 px.
+async function shrink(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 3200 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+}
+
+// An image keeps its pixel size in page units, shrunk to fit inside the
+// part of the page on screen, and lands in the middle of it.
+async function placeImage(asset) {
+  const img = loadImage(asset);
+  if (!img.complete) await new Promise((resolve) => img.addEventListener('load', resolve, { once: true }));
+  if (!img.naturalWidth) return toast('The pasted image could not be loaded.');
+  const view = board.visibleRect();
+  const fit = Math.min(1, (view.width * 0.85) / img.naturalWidth, (view.height * 0.85) / img.naturalHeight);
+  addItem({ kind: 'image', asset, width: img.naturalWidth * fit, height: img.naturalHeight * fit });
+}
+
+// Text takes the pen color and wraps to at most 900 page units, or less
+// when the page is zoomed in.
+function placeText(text) {
+  const size = 28;
+  const view = board.visibleRect();
+  const clean = text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').trimEnd();
+  const { width, height } = measureText(clean, size, Math.min(900, view.width * 0.85));
+  addItem({ kind: 'text', text: clean, size, color: penColor(), width, height });
+}
+
+function addItem({ height, ...fields }) {
+  const view = board.visibleRect();
+  const item = {
+    id: newId(),
+    ...fields,
+    x: view.x + (view.width - fields.width) / 2,
+    y: view.y + Math.max(0, (view.height - height) / 2),
+  };
+  if (item.kind === 'image') item.height = height;
+  // A paste onto the same spot as an earlier item steps down and right, so
+  // pasting twice shows two items, not one on top of the other.
+  const page = space.pages[current.pageId];
+  while (pageItems(page).some((other) => Math.abs(other.x - item.x) < 1 && Math.abs(other.y - item.y) < 1)) {
+    item.x += GRID;
+    item.y += GRID;
+  }
+  const pageId = current.pageId;
+  if (commit({ type: 'item.add', pageId, item })) pushHistory(pageId, { kind: 'item', itemId: item.id });
+}
+
+// An image that finishes loading redraws whatever shows it.
+onImageLoad(() => {
+  if (current.pageId) board.scheduleRedraw();
+  else if (space) scheduleLibrary();
+  if (grid.open) scheduleGrid();
+});
+
 // --- Chrome and input wiring -----------------------------------------------
 
 function setStatus() {
@@ -917,6 +1022,8 @@ els.eraserTool.onclick = () => chooseTool('erase');
 els.selectTool.onclick = () => chooseTool('select');
 els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider.value) });
 els.copy.onclick = copyPage;
+els.paste.onclick = pasteFromComputer;
+document.addEventListener('paste', pasteEvent);
 els.prev.onclick = () => go(-1);
 els.pageNumber.onclick = () => {
   if (!grid.open) return openGrid();
