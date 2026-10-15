@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#16131b" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Inkbridge</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <section id="pair" class="view" hidden>
+      <div class="pair-panel">
+        <h1>Inkbridge</h1>
+        <p>Draw on one device. See it and copy it on the other.</p>
+        <button id="create-space" class="primary">Start a new space</button>
+        <div class="divider"><span>or join one</span></div>
+        <form id="join-form">
+          <input id="join-code" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="6-digit code" aria-label="Space code" />
+          <button type="submit">Join</button>
+        </form>
+        <p id="pair-error" class="error" role="alert"></p>
+      </div>
+    </section>
+
+    <section id="library" class="view" hidden>
+      <header class="library-bar">
+        <h1>Notebooks</h1>
+        <div class="space-info">
+          <span class="label">Space code</span>
+          <span id="space-code" class="code"></span>
+          <span id="peers" class="peers"></span>
+          <button id="leave" class="quiet">Leave</button>
+        </div>
+      </header>
+      <div id="notebooks" class="grid"></div>
+    </section>
+
+    <section id="notebook" class="view" hidden>
+      <header class="toolbar">
+        <button id="back" class="quiet" title="Notebooks">‹ Notebooks</button>
+        <button id="title" class="title" title="Rename notebook"></button>
+        <div class="group" id="colors"></div>
+        <label class="swatch custom" title="Custom color">
+          <input id="custom-color" type="color" aria-label="Custom color" />
+        </label>
+        <div class="group" id="widths"></div>
+        <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+        <button id="paper-button" title="Paper">Paper</button>
+        <button id="copy" class="primary" title="Copy page image (Ctrl+C)">Copy</button>
+        <div class="spacer"></div>
+        <button id="prev" class="quiet" title="Previous page (←)">‹</button>
+        <span id="page-number" class="page-number"></span>
+        <button id="next" class="quiet" title="Next page, or a new page at the end (→)">›</button>
+        <button id="follow" class="toggle" title="Follow the page other devices show" aria-pressed="true">Follow</button>
+        <span id="status" class="status"></span>
+      </header>
+      <div id="paper-menu" class="popover" hidden></div>
+      <main id="stage">
+        <div class="sheet">
+          <canvas class="paper"></canvas>
+          <canvas class="ink"></canvas>
+        </div>
+      </main>
+    </section>
+
+    <div id="toast" role="status" hidden></div>
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>

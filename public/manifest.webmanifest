@@ -1,0 +1,9 @@
+{
+  "name": "Inkbridge",
+  "short_name": "Inkbridge",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#16131b",
+  "theme_color": "#16131b"
+}
