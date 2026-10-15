@@ -29,6 +29,14 @@ export class Board {
     stage.addEventListener('pointermove', (e) => this.move(e));
     stage.addEventListener('pointerup', (e) => this.up(e));
     stage.addEventListener('pointercancel', (e) => this.up(e, true));
+    stage.addEventListener('lostpointercapture', (e) => this.up(e, true));
+
+    // iPad Safari reads quick Pencil strokes as taps it may own, such as a
+    // double tap, and then sends no pointerdown for the stroke. Cancelling
+    // the touch events keeps every stroke on the pointer path.
+    for (const type of ['touchstart', 'touchmove', 'touchend']) {
+      stage.addEventListener(type, (e) => e.cancelable && e.preventDefault(), { passive: false });
+    }
   }
 
   setPage(page) {
@@ -111,7 +119,13 @@ export class Board {
       this.stage.setPointerCapture(e.pointerId);
       return;
     }
-    if (e.button !== 0 || this.drawing) return;
+    if (e.button !== 0) return;
+    // A new stroke can start before the last stroke's pointerup arrives.
+    // End the old stroke so the new one is never dropped.
+    if (this.drawing) {
+      this.drawing = null;
+      this.callbacks.onStrokeEnd();
+    }
     if (this.swipe) this.cancelSwipe();
     this.drawing = { id: e.pointerId };
     if (e.pointerType === 'pen') this.lastPenAt = Date.now();
