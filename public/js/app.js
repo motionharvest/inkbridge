@@ -68,7 +68,7 @@ let current = { notebookId: null, pageId: null };
 let tool = loadTool();
 let follow = localStorage.getItem(KEY.follow) !== 'off';
 let peers = 1;
-const history = new Map(); // pageId -> this device's undo steps on that page
+const undoSteps = new Map(); // pageId -> this device's undo steps on that page
 let live = null; // the stroke this device is drawing: { pageId, strokeId, unsent: [] }
 let erasing = null; // the eraser pass in progress; see startErase
 
@@ -81,6 +81,13 @@ const board = new Board(els.stage, {
 
 // --- Connection ------------------------------------------------------------
 
+// The space code lives in local storage and in the address (?space=123456).
+// The address copy matters on the iPad: a Home Screen icon has its own
+// storage, but it keeps the address it was added with, so it opens the same
+// space with no code to type.
+const codeInAddress = new URLSearchParams(location.search).get('space');
+if (/^\d{6}$/.test(codeInAddress ?? '')) localStorage.setItem(KEY.code, codeInAddress);
+
 const socket = io({ auth: (cb) => cb({ code: localStorage.getItem(KEY.code) }) });
 
 socket.on('connect', () => {
@@ -89,7 +96,7 @@ socket.on('connect', () => {
   if (!code) return show('pair');
   socket.emit('space:join', { code }, (res) => {
     if (res.ok) return loadSpace(res.space, res.view);
-    localStorage.removeItem(KEY.code);
+    forgetSpace();
     show('pair', res.error);
   });
 });
@@ -112,6 +119,7 @@ socket.on('view', (view) => {
 function loadSpace(nextSpace, view) {
   space = nextSpace;
   localStorage.setItem(KEY.code, space.code);
+  history.replaceState(null, '', `/?space=${space.code}`);
   els.spaceCode.textContent = formatCode(space.code);
   const stillThere = current.pageId && space.pages[current.pageId];
   if (stillThere) return openPage(current.notebookId, current.pageId, { broadcast: false, animate: false });
@@ -453,15 +461,15 @@ function endErase() {
 }
 
 function pushHistory(pageId, step) {
-  if (!history.has(pageId)) history.set(pageId, []);
-  history.get(pageId).push(step);
+  if (!undoSteps.has(pageId)) undoSteps.set(pageId, []);
+  undoSteps.get(pageId).push(step);
 }
 
 // Undoes this device's last step on the current page. A step that another
 // device already reversed, such as a stroke it erased, is skipped.
 function undo() {
   const pageId = current.pageId;
-  const steps = history.get(pageId);
+  const steps = undoSteps.get(pageId);
   while (steps?.length) {
     const step = steps.pop();
     if (step.kind === 'draw') {
@@ -531,7 +539,7 @@ els.joinForm.onsubmit = (e) => {
 
 els.leave.onclick = () => {
   if (!confirm('Leave this space on this device? The notebooks stay on the server.')) return;
-  localStorage.removeItem(KEY.code);
+  forgetSpace();
   location.reload();
 };
 
@@ -607,6 +615,11 @@ function iconButton(label, text, onclick) {
     onclick();
   };
   return button;
+}
+
+function forgetSpace() {
+  localStorage.removeItem(KEY.code);
+  history.replaceState(null, '', '/');
 }
 
 function formatCode(code) {
