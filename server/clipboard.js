@@ -2,6 +2,9 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const OWNER_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'clipboard-owner.py');
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -15,7 +18,16 @@ export async function copyImageToClipboard(png) {
   switch (process.platform) {
     case 'linux':
       if (process.env.WAYLAND_DISPLAY) return run('wl-copy', ['--type', 'image/png'], png);
-      if (process.env.DISPLAY) return run('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i'], png);
+      if (process.env.DISPLAY) {
+        // The GTK owner offers only image formats. xclip is the fallback
+        // when Python's GTK bindings are missing, and it also offers the
+        // bytes to apps that ask for text.
+        try {
+          return await ownWithGtk(png);
+        } catch {
+          return run('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i'], png);
+        }
+      }
       throw new Error('The server has no display, so it cannot reach a clipboard.');
     case 'darwin':
       return withTempFile(png, (file) =>
@@ -53,6 +65,37 @@ function run(command, args, input) {
     });
     child.stdin.on('error', () => {});
     child.stdin.end(input);
+  });
+}
+
+// Starts clipboard-owner.py in the background and resolves once it owns
+// the clipboard. The process outlives this call and exits on its own when
+// another program takes the clipboard.
+function ownWithGtk(png) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('python3', [OWNER_SCRIPT], { detached: true, stdio: ['pipe', 'pipe', 'ignore'] });
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('The clipboard owner did not start.'));
+    }, 5000);
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`The clipboard owner exited with code ${code}.`));
+    });
+    child.stdout.on('data', (chunk) => {
+      if (!String(chunk).includes('ready')) return;
+      clearTimeout(timer);
+      child.removeAllListeners('exit');
+      child.stdout.destroy();
+      child.unref();
+      resolve();
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(png);
   });
 }
 
