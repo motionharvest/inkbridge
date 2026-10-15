@@ -8,6 +8,8 @@ The project exists to make one path fast: sketch on the iPad with the Pencil, th
 
 A space holds your notebooks. Each space has a six-digit code, and every device that enters the code sees the same notebooks.
 
+Pressing and holding a notebook cover in the notebook list starts editing. Each cover then shows a minus button. A tap on a minus button asks for confirmation, then removes the notebook and every page in it. Done, `Esc`, or a tap on a cover ends editing. The pencil next to a notebook's name renames it.
+
 A notebook holds pages. Swipe a finger from right to left to go to the next page. Swipe from left to right to go back.
 
 A tap on the page number in the bottom left corner opens the page grid, a preview of every page in the notebook. A tap on a preview opens that page. Pressing and holding a preview starts editing: each page shows a minus button in its top left corner, and the pages after a removed page move over to close the gap. Done, `Esc`, or a tap on a preview ends editing. A notebook always keeps at least one page. The other devices open and close the page grid along with you.

@@ -41,6 +41,7 @@ const els = {
   createSpace: $('#create-space'),
   library: $('#library'),
   notebooks: $('#notebooks'),
+  libraryDone: $('#library-done'),
   spaceCode: $('#space-code'),
   peers: $('#peers'),
   leave: $('#leave'),
@@ -217,6 +218,7 @@ function show(name, error = '') {
 
 function showLibrary({ broadcast = true } = {}) {
   closeGrid();
+  libraryEditing = false;
   setSelection(null);
   current = { notebookId: null, pageId: null };
   show('library');
@@ -230,8 +232,21 @@ function scheduleLibrary() {
   libraryTimer = setTimeout(() => !current.pageId && renderLibrary(), 300);
 }
 
+// Pressing and holding a notebook cover starts editing, like the page grid.
+// Each cover then shows a minus button, and removing a notebook asks first,
+// because it removes every page in it. Editing belongs to this device.
+let libraryEditing = false;
+
+function setLibraryEditing(editing) {
+  libraryEditing = editing && space.notebooks.length > 0;
+  renderLibrary();
+}
+
 function renderLibrary() {
+  if (!space.notebooks.length) libraryEditing = false;
   els.notebooks.replaceChildren();
+  els.notebooks.classList.toggle('editing', libraryEditing);
+  els.libraryDone.hidden = !libraryEditing;
   const add = document.createElement('button');
   add.className = 'card new';
   add.innerHTML = '<span class="plus">+</span><span>New notebook</span>';
@@ -255,12 +270,22 @@ function renderLibrary() {
       const title = prompt('Rename notebook', notebook.title);
       if (title !== null) commit({ type: 'notebook.rename', id: notebook.id, title });
     });
-    const remove = iconButton('Delete', '✕', () => {
-      if (confirm(`Delete “${notebook.title}” and all its pages?`)) commit({ type: 'notebook.delete', id: notebook.id });
-    });
-    meta.append(name, count, rename, remove);
+    meta.append(name, count, rename);
     card.append(cover, meta);
-    cover.onclick = () => openNotebook(notebook);
+    if (libraryEditing) {
+      card.append(
+        removeButton(`Remove ${notebook.title}`, () => {
+          const pages = `${notebook.pageIds.length} ${notebook.pageIds.length === 1 ? 'page' : 'pages'}`;
+          if (confirm(`Are you sure you want to remove the notebook “${notebook.title}”? Its ${pages} will be removed too.`)) {
+            commit({ type: 'notebook.delete', id: notebook.id });
+          }
+        }),
+      );
+    }
+    wirePress(cover, {
+      onLong: () => setLibraryEditing(true),
+      onTap: () => (libraryEditing ? setLibraryEditing(false) : openNotebook(notebook)),
+    });
     els.notebooks.append(card);
   }
 }
@@ -367,18 +392,14 @@ function renderGrid({ flip = false } = {}) {
       label.textContent = index + 1;
       tile.append(thumb, label);
       if (removable) {
-        const remove = document.createElement('button');
-        remove.className = 'remove';
-        remove.setAttribute('aria-label', `Remove page ${index + 1}`);
-        remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>';
-        remove.addEventListener('pointerdown', (e) => e.stopPropagation());
-        remove.onclick = (e) => {
-          e.stopPropagation();
-          commit({ type: 'page.delete', notebookId: notebook.id, pageId });
-        };
-        tile.append(remove);
+        tile.append(
+          removeButton(`Remove page ${index + 1}`, () => commit({ type: 'page.delete', notebookId: notebook.id, pageId })),
+        );
       }
-      wirePress(tile, notebook.id, pageId);
+      wirePress(tile, {
+        onLong: () => setEditing(true),
+        onTap: () => (grid.editing ? setEditing(false) : openPage(notebook.id, pageId)),
+      });
       return tile;
     }),
   );
@@ -398,19 +419,18 @@ function renderGrid({ flip = false } = {}) {
   }
 }
 
-// A short tap opens the page, or leaves editing. A press held for
-// LONG_PRESS_MS enters editing. Moving the finger cancels both, so the grid
-// can still scroll.
-function wirePress(tile, notebookId, pageId) {
+// Tells a tap from a press held for LONG_PRESS_MS. Moving the finger
+// cancels both, so a scrolling grid never taps or enters editing.
+function wirePress(el, { onTap, onLong }) {
   let press = null;
-  tile.addEventListener('pointerdown', (e) => {
+  el.addEventListener('pointerdown', (e) => {
     press = { x: e.clientX, y: e.clientY, long: false };
     press.timer = setTimeout(() => {
       press.long = true;
-      setEditing(true);
+      onLong();
     }, LONG_PRESS_MS);
   });
-  tile.addEventListener('pointermove', (e) => {
+  el.addEventListener('pointermove', (e) => {
     if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > TAP_SLOP_PX) {
       clearTimeout(press.timer);
       press = null;
@@ -421,13 +441,27 @@ function wirePress(tile, notebookId, pageId) {
     clearTimeout(press.timer);
     const wasLong = press.long;
     press = null;
-    if (!tapped || wasLong) return;
-    if (grid.editing) setEditing(false);
-    else openPage(notebookId, pageId);
+    if (tapped && !wasLong) onTap();
   };
-  tile.addEventListener('pointerup', () => end(true));
-  tile.addEventListener('pointercancel', () => end(false));
-  tile.addEventListener('contextmenu', (e) => e.preventDefault());
+  el.addEventListener('pointerup', () => end(true));
+  el.addEventListener('pointercancel', () => end(false));
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+// The round minus button that editing puts in the top left corner of a
+// page preview or a notebook cover.
+function removeButton(label, onRemove) {
+  const button = document.createElement('button');
+  button.className = 'remove';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>';
+  button.addEventListener('pointerdown', (e) => e.stopPropagation());
+  button.onclick = (e) => {
+    e.stopPropagation();
+    onRemove();
+  };
+  return button;
 }
 
 // Moves one page forward or back. Moving forward from the last page adds a
@@ -890,6 +924,7 @@ els.pageNumber.onclick = () => {
   socket.emit('view', { screen: 'page', notebookId: current.notebookId, pageId: current.pageId });
 };
 els.gridDone.onclick = () => setEditing(false);
+els.libraryDone.onclick = () => setLibraryEditing(false);
 els.next.onclick = () => go(1);
 els.title.onclick = () => {
   const notebook = findNotebook(space, current.notebookId);
@@ -922,6 +957,7 @@ document.addEventListener(
 );
 
 document.addEventListener('keydown', (e) => {
+  if (!current.pageId && libraryEditing && e.key === 'Escape') return setLibraryEditing(false);
   if (!current.pageId || e.target.closest('input, textarea')) return;
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'z') return e.preventDefault(), undo();
