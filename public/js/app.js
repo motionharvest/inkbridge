@@ -82,7 +82,7 @@ const board = new Board(els.stage, {
   onStrokeExtend: extendStroke,
   onStrokeEnd: endStroke,
   onSwipe: (direction) => go(direction),
-  onTwoFingerTap: () => undo(),
+  onTwoFingerDoubleTap: () => undo(),
 });
 
 // --- Connection ------------------------------------------------------------

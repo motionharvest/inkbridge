@@ -10,13 +10,14 @@ const MAX_ZOOM = 6;
 const PAN_MARGIN = 60; // px of empty stage allowed past a zoomed page edge
 const TAP_MS = 300;
 const TAP_SLOP = 12; // px a finger may move and still count as a tap
+const DOUBLE_TAP_MS = 400; // longest gap between the two taps of a double tap
 
 // The board shows one page and turns pointer input into strokes, swipes,
 // and zoom. A pen or a mouse draws. Fingers never draw, so a palm never
 // leaves ink while the Pencil is in use:
 //   one finger swipes between pages, or pans when the page is zoomed in;
 //   two fingers pinch to zoom and move the page;
-//   a quick tap with two fingers, with no movement, undoes.
+//   two quick two-finger taps in a row undo once.
 // On a computer, Ctrl with the scroll wheel or a trackpad pinch zooms, and
 // scrolling pans a zoomed page.
 //
@@ -24,14 +25,14 @@ const TAP_SLOP = 12; // px a finger may move and still count as a tap
 // that place the page inside the stage; every draw call goes through it,
 // so zooming redraws sharp ink instead of stretching pixels.
 export class Board {
-  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerTap }) {
+  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap }) {
     this.stage = stage;
     this.sheet = stage.querySelector('.sheet');
     this.paperCanvas = stage.querySelector('.paper');
     this.inkCanvas = stage.querySelector('.ink');
     this.paperCtx = this.paperCanvas.getContext('2d');
     this.inkCtx = this.inkCanvas.getContext('2d');
-    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerTap };
+    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap };
     this.page = null;
     this.fit = 1; // scale that fits the whole page in the stage
     this.zoom = 1;
@@ -41,6 +42,7 @@ export class Board {
     this.touches = new Map();
     this.gesture = null;
     this.lastPenAt = 0;
+    this.lastTwoFingerTapAt = 0;
     this.eraserRadius = 0;
     this.ring = document.createElement('div');
     this.ring.className = 'eraser-ring';
@@ -359,7 +361,7 @@ export class Board {
         this.scheduleRedraw();
         this.gesture = { kind: 'done' };
         if (!this.touches.size) this.gesture = null;
-        this.callbacks.onTwoFingerTap?.();
+        this.twoFingerTap();
         return;
       }
       // A zoom that ends close to the whole page settles on the whole page.
@@ -370,6 +372,18 @@ export class Board {
       this.gesture = { kind: 'done' };
     }
     if (!this.touches.size) this.gesture = null;
+  }
+
+  // One two-finger tap does nothing on its own. A second one within
+  // DOUBLE_TAP_MS makes a double tap, which undoes once and starts over.
+  twoFingerTap() {
+    const now = performance.now();
+    if (now - this.lastTwoFingerTapAt < DOUBLE_TAP_MS) {
+      this.lastTwoFingerTapAt = 0;
+      this.callbacks.onTwoFingerDoubleTap?.();
+    } else {
+      this.lastTwoFingerTapAt = now;
+    }
   }
 
   endGesture() {

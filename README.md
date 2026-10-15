@@ -50,7 +50,7 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | Apple Pencil or mouse | Draw |
 | One finger, swipe right to left | Next page, or a new page at the end |
 | One finger, swipe left to right | Previous page |
-| Two fingers, quick tap | Undo |
+| Two fingers, double tap | Undo once |
 | Two fingers, pinch | Zoom in or out, up to six times |
 | One or two fingers on a zoomed page | Move the page |
 | Ctrl with the scroll wheel, or a trackpad pinch | Zoom on a computer |
