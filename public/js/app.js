@@ -594,7 +594,7 @@ function penPreview(size) {
   svg.innerHTML = `
     <defs><clipPath id="${clipId}"><circle cx="14" cy="14" r="12" /></clipPath></defs>
     <line x1="6" y1="14" x2="22" y2="14" clip-path="url(#${clipId})"
-      stroke="${penColor()}" stroke-width="${thickness}" stroke-linecap="round" />`;
+      stroke="currentColor" stroke-width="${thickness}" stroke-linecap="round" />`;
   return svg;
 }
 
