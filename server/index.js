@@ -63,11 +63,16 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
       socket.to(code).emit('op', op);
     });
 
-    // The page a device is showing. Other devices that follow jump to it.
+    // The view a device is showing: the notebook list or one page. Every
+    // other device opens the same view, and a device that joins later
+    // starts on it.
     socket.on('view', (view) => {
       const code = socket.data.code;
-      if (!code || typeof view?.pageId !== 'string') return;
-      const clean = { notebookId: String(view.notebookId), pageId: view.pageId };
+      if (!code) return;
+      let clean;
+      if (view?.screen === 'library') clean = { screen: 'library' };
+      else if (typeof view?.pageId === 'string') clean = { screen: 'page', notebookId: String(view.notebookId), pageId: view.pageId };
+      else return;
       store.views.set(code, clean);
       socket.to(code).emit('view', clean);
     });

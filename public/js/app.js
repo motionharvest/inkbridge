@@ -120,10 +120,10 @@ socket.on('op', (op) => {
   if (space && applyOp(space, op)) afterOp(op);
 });
 
+// Every device follows. A view is either the notebook list or one page,
+// and whichever view any device opens, the others open too.
 socket.on('view', (view) => {
-  // Every device follows: whichever page any device opens, the others open
-  // too, from a page or from the notebook list.
-  if (space) openPage(view.notebookId, view.pageId, { broadcast: false });
+  if (space) showView(view);
 });
 
 function loadSpace(nextSpace, view) {
@@ -131,10 +131,25 @@ function loadSpace(nextSpace, view) {
   localStorage.setItem(KEY.code, space.code);
   history.replaceState(null, '', `/?space=${space.code}`);
   els.spaceCode.textContent = formatCode(space.code);
-  const stillThere = current.pageId && space.pages[current.pageId];
-  if (stillThere) return openPage(current.notebookId, current.pageId, { broadcast: false, animate: false });
-  if (view && space.pages[view.pageId]) return openPage(view.notebookId, view.pageId, { broadcast: false, animate: false });
-  showLibrary();
+  // A device that joins or reconnects opens the view the space is on, so
+  // it matches the other devices from the start.
+  if (view && showView(view, { animate: false })) return;
+  if (current.pageId && space.pages[current.pageId]) {
+    return openPage(current.notebookId, current.pageId, { broadcast: false, animate: false });
+  }
+  showLibrary({ broadcast: false });
+}
+
+// Opens a view that came from another device or from the server. Returns
+// false when the view names a page this space does not have.
+function showView(view, { animate = true } = {}) {
+  if (view.screen === 'library') {
+    showLibrary({ broadcast: false });
+    return true;
+  }
+  if (!space.pages[view.pageId]) return false;
+  openPage(view.notebookId, view.pageId, { broadcast: false, animate });
+  return true;
 }
 
 function commit(op) {
@@ -163,7 +178,7 @@ function afterOp(op) {
       if (onPage) board.scheduleRedraw();
       break;
     default:
-      if (current.notebookId && !findNotebook(space, current.notebookId)) return showLibrary();
+      if (current.notebookId && !findNotebook(space, current.notebookId)) return showLibrary({ broadcast: false });
       renderChrome();
   }
   if (!current.pageId) scheduleLibrary();
@@ -177,10 +192,12 @@ function show(name, error = '') {
   if (name === 'pair') els.joinCode.focus();
 }
 
-function showLibrary() {
+function showLibrary({ broadcast = true } = {}) {
+  setSelection(null);
   current = { notebookId: null, pageId: null };
   show('library');
   renderLibrary();
+  if (broadcast) socket.emit('view', { screen: 'library' });
 }
 
 let libraryTimer = null;
@@ -261,7 +278,7 @@ function openPage(notebookId, pageId, { broadcast = true, animate = true } = {})
   const lastPages = readJson(KEY.lastPages) ?? {};
   lastPages[notebookId] = pageId;
   localStorage.setItem(KEY.lastPages, JSON.stringify(lastPages));
-  if (broadcast) socket.emit('view', { notebookId, pageId });
+  if (broadcast) socket.emit('view', { screen: 'page', notebookId, pageId });
 }
 
 // Moves one page forward or back. Moving forward from the last page adds a
@@ -708,7 +725,7 @@ els.leave.onclick = () => {
   location.reload();
 };
 
-els.back.onclick = showLibrary;
+els.back.onclick = () => showLibrary();
 els.undo.onclick = undo;
 els.addColor.onclick = addColor;
 els.penTool.onclick = () => chooseTool('pen');

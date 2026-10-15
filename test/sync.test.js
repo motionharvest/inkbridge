@@ -56,6 +56,10 @@ test('two devices share a space through its code', async () => {
   assert.equal(state.space.notebooks[0].title, 'Sketches');
   assert.equal(state.view.pageId, page.id);
 
+  const toLibrary = next(late, 'view');
+  desktop.emit('view', { screen: 'library' });
+  assert.deepEqual(await toLibrary, { screen: 'library' });
+
   server.store.flush();
   const saved = JSON.parse(fs.readFileSync(path.join(dataDir, `${created.space.code}.json`), 'utf8'));
   assert.equal(saved.notebooks.length, 1);

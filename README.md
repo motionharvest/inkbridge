@@ -26,7 +26,7 @@ The Eraser removes only the ink inside a small circle. A ring shows the circle a
 
 Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass restores every line that pass cut.
 
-Every device follows the others. When any device opens a page, every other device in the space opens the same page, from a page or from the notebook list. The computer therefore shows the page you are drawing on the iPad without any input.
+Every device follows the others, in both directions. The space is always on one view: the notebook list or one page. When any device opens a page, goes back to the notebook list, or creates a notebook and enters it, every other device does the same. A device that joins or reconnects starts on the view the space is on. The computer therefore shows what you see on the iPad without any input.
 
 The Select tool, a dashed square, drags a light blue rectangle over the page. While a selection exists, Copy copies only the selected region, at twice page resolution so a small region still pastes as a usable image. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The selection belongs to the device that made it and does not sync.
 
