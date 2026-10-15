@@ -370,7 +370,7 @@ function renderGrid({ flip = false } = {}) {
         const remove = document.createElement('button');
         remove.className = 'remove';
         remove.setAttribute('aria-label', `Remove page ${index + 1}`);
-        remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>';
+        remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>';
         remove.addEventListener('pointerdown', (e) => e.stopPropagation());
         remove.onclick = (e) => {
           e.stopPropagation();
