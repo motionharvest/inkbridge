@@ -44,31 +44,30 @@
         <button id="back" class="quiet" title="Notebooks">‹ Notebooks</button>
         <button id="title" class="title" title="Rename notebook"></button>
         <div class="group">
-          <button id="pen-tool" class="tool" title="Pen. Tap again for size." aria-label="Pen" aria-pressed="true">
+          <button id="pen-tool" class="tool" title="Pen" aria-label="Pen" aria-pressed="true">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 4.5l4 4L8 20H4v-4z" /><path d="M13 7l4 4" /></svg>
           </button>
-          <button id="eraser-tool" class="tool" title="Eraser (E). Tap again for size." aria-label="Eraser" aria-pressed="false">
+          <button id="eraser-tool" class="tool" title="Eraser (E)" aria-label="Eraser" aria-pressed="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 20l-4.5-4.5a1.5 1.5 0 0 1 0-2.1L13.4 3.5a1.5 1.5 0 0 1 2.1 0l5 5a1.5 1.5 0 0 1 0 2.1L11 20z" /><path d="M8.5 9l7 7" /><path d="M8 20h12" /></svg>
           </button>
+          <button id="undo" class="tool" title="Undo (Ctrl+Z)" aria-label="Undo">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+          </button>
         </div>
-        <button id="size-button" class="size-button" title="Size" aria-label="Tool size"><span class="size-dot"></span></button>
-        <div class="group" id="colors"></div>
-        <label class="swatch custom" title="Custom color">
-          <input id="custom-color" type="color" aria-label="Custom color" />
-        </label>
-        <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
         <button id="paper-button" title="Paper">Paper</button>
         <button id="copy" class="primary" title="Copy page image (Ctrl+C)">Copy</button>
-        <div class="spacer"></div>
-        <button id="prev" class="quiet" title="Previous page (←)">‹</button>
+        <button id="prev" class="quiet nav" title="Previous page (←)">‹</button>
         <span id="page-number" class="page-number"></span>
-        <button id="next" class="quiet" title="Next page, or a new page at the end (→)">›</button>
+        <button id="next" class="quiet nav" title="Next page, or a new page at the end (→)">›</button>
         <button id="follow" class="toggle" title="Follow the page other devices show" aria-pressed="true">Follow</button>
         <span id="status" class="status"></span>
+        <div class="spacer"></div>
+        <div class="group" id="size-slots"></div>
+        <div class="group" id="color-slots"></div>
       </header>
       <div id="paper-menu" class="popover" hidden></div>
       <div id="size-menu" class="size-menu" hidden>
-        <input id="size-slider" type="range" aria-label="Tool size" />
+        <input id="size-slider" type="range" aria-label="Size of the selected slot" />
         <div class="ticks" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
       </div>
       <main id="stage">

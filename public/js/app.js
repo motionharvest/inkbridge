@@ -4,13 +4,18 @@ import { cutStrokes } from './erase.js';
 import { renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId } from './shared/ops.js';
 
-const INK_COLORS = ['#f4f1ea', '#a9a6b0', '#ffd166', '#ff8a5c', '#ff6b8b', '#6ee7b7', '#7cc4ff', '#c4a7ff'];
-// Each tool keeps its own size, in page units: line width for the pen,
-// circle radius for the eraser.
+// The pen and the eraser each have three size slots, and the pen has five
+// color slots. Tapping a slot selects it. Tapping the selected size slot
+// opens a slider that changes that slot's size. The selected color slot
+// shows a chevron that opens a color picker for that slot. Slots keep their
+// values, so the toolbar stays the same and becomes a personal palette.
+// Sizes are in page units: line width for the pen, circle radius for the
+// eraser.
 const SIZES = {
-  pen: { key: 'penSize', min: 1, max: 24, step: 0.5, fallback: 4 },
-  erase: { key: 'eraserSize', min: 4, max: 60, step: 1, fallback: 12 },
+  pen: { min: 1, max: 24, step: 0.5, defaults: [2, 4, 8] },
+  erase: { min: 4, max: 60, step: 1, defaults: [8, 16, 32] },
 };
+const DEFAULT_COLORS = ['#f4f1ea', '#ffd166', '#ff6b8b', '#6ee7b7', '#7cc4ff'];
 const PAPERS = [
   { name: 'Plum night', color: '#231f29', dots: '#9b99a1' },
   { name: 'Graphite', color: '#1d1e21', dots: '#7d7f85' },
@@ -20,7 +25,7 @@ const PAPERS = [
 
 const KEY = {
   code: 'inkbridge.code',
-  tool: 'inkbridge.tool',
+  tool: 'inkbridge.tools',
   paper: 'inkbridge.paper',
   follow: 'inkbridge.follow',
   lastPages: 'inkbridge.lastPages',
@@ -41,15 +46,12 @@ const els = {
   notebook: $('#notebook'),
   back: $('#back'),
   title: $('#title'),
-  colors: $('#colors'),
-  customColor: $('#custom-color'),
   penTool: $('#pen-tool'),
   eraserTool: $('#eraser-tool'),
-  sizeButton: $('#size-button'),
-  sizeDot: $('#size-button .size-dot'),
+  sizeSlots: $('#size-slots'),
+  colorSlots: $('#color-slots'),
   sizeMenu: $('#size-menu'),
   sizeSlider: $('#size-slider'),
-  widths: $('#widths'),
   undo: $('#undo'),
   stage: $('#stage'),
   paperButton: $('#paper-button'),
@@ -285,73 +287,137 @@ function renderTools() {
   els.penTool.setAttribute('aria-pressed', String(!erasing));
   els.eraserTool.classList.toggle('on', erasing);
   els.eraserTool.setAttribute('aria-pressed', String(erasing));
-  els.colors.hidden = erasing;
-  els.customColor.parentElement.hidden = erasing;
-  els.colors.replaceChildren(
-    ...INK_COLORS.map((color) => {
+  board.setEraser(erasing ? eraserSize() : 0);
+  renderSizeSlots();
+  renderColorSlots();
+}
+
+// Each size slot previews its size: a dot of ink for the pen, and the
+// eraser's circle, a dark fill with a light gray outline, for the eraser.
+function renderSizeSlots() {
+  const erasing = tool.mode === 'erase';
+  const slots = tool[tool.mode];
+  els.sizeSlots.replaceChildren(
+    ...slots.sizes.map((size, index) => {
+      const button = document.createElement('button');
+      button.className = 'slot size-slot';
+      button.classList.toggle('active', index === slots.slot);
+      button.title = `${erasing ? 'Eraser' : 'Pen'} size ${size}. Tap again to change it.`;
+      const dot = document.createElement('span');
+      dot.className = 'size-dot';
+      dot.classList.toggle('eraser', erasing);
+      const diameter = erasing ? 6 + size * 0.42 : 4 + size * 1.1;
+      dot.style.width = dot.style.height = `${diameter}px`;
+      dot.style.background = erasing ? '#0d0b10' : penColor();
+      button.append(dot);
+      button.onclick = () => {
+        if (index === slots.slot) return toggleSizeMenu(button);
+        els.sizeMenu.hidden = true;
+        setSlots(tool.mode, { slot: index });
+      };
+      return button;
+    }),
+  );
+  const range = SIZES[tool.mode];
+  Object.assign(els.sizeSlider, { min: range.min, max: range.max, step: range.step });
+  els.sizeSlider.value = slots.sizes[slots.slot];
+}
+
+function renderColorSlots() {
+  els.colorSlots.hidden = tool.mode === 'erase';
+  els.colorSlots.replaceChildren(
+    ...tool.colors.map((color, index) => {
+      const slot = document.createElement('div');
+      slot.className = 'slot color-slot';
+      const active = index === tool.colorSlot;
+      slot.classList.toggle('active', active);
       const swatch = document.createElement('button');
       swatch.className = 'swatch';
       swatch.style.background = color;
       swatch.title = color;
-      swatch.classList.toggle('active', color === tool.color);
-      swatch.onclick = () => setTool({ color });
-      return swatch;
+      swatch.onclick = () => setTool({ colorSlot: index });
+      slot.append(swatch);
+      if (active) {
+        const chevron = document.createElement('label');
+        chevron.className = 'chevron';
+        chevron.title = 'Change this color';
+        chevron.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>';
+        const picker = document.createElement('input');
+        picker.type = 'color';
+        picker.value = color;
+        picker.setAttribute('aria-label', 'Change this color');
+        picker.oninput = () => {
+          const colors = [...tool.colors];
+          colors[index] = picker.value;
+          setTool({ colors }, { keepColorSlots: true });
+          swatch.style.background = picker.value;
+        };
+        picker.onchange = () => renderTools();
+        chevron.append(picker);
+        slot.append(chevron);
+      }
+      return slot;
     }),
   );
-  els.customColor.value = tool.color;
-  els.customColor.parentElement.classList.toggle('active', !INK_COLORS.includes(tool.color));
-  board.setEraser(erasing ? tool.eraserSize : 0);
-  renderSize();
 }
 
-// The size button previews the current tool at its size: a dot of ink for
-// the pen, and the eraser's circle outline for the eraser.
-function renderSize() {
-  const erasing = tool.mode === 'erase';
-  const size = sizeOf();
-  const diameter = erasing ? 6 + size * 0.42 : 4 + size * 1.1;
-  els.sizeDot.style.width = els.sizeDot.style.height = `${diameter}px`;
-  els.sizeDot.style.background = erasing ? '#0d0b10' : tool.color;
-  els.sizeDot.classList.toggle('eraser', erasing);
-  els.sizeButton.title = `${erasing ? 'Eraser' : 'Pen'} size ${size}`;
-  const range = SIZES[tool.mode];
-  Object.assign(els.sizeSlider, { min: range.min, max: range.max, step: range.step });
-  els.sizeSlider.value = size;
+function penColor() {
+  return tool.colors[tool.colorSlot];
 }
 
-function sizeOf() {
-  return tool[SIZES[tool.mode].key];
+function penSize() {
+  return tool.pen.sizes[tool.pen.slot];
 }
 
-// Tapping the tool that is already selected opens its size slider.
+function eraserSize() {
+  return tool.erase.sizes[tool.erase.slot];
+}
+
 function chooseTool(mode) {
-  if (tool.mode === mode) return toggleSizeMenu();
   els.sizeMenu.hidden = true;
   setTool({ mode });
 }
 
-function toggleSizeMenu() {
+function toggleSizeMenu(anchor) {
   if (!els.sizeMenu.hidden) return (els.sizeMenu.hidden = true);
   els.paperMenu.hidden = true;
-  const rect = els.sizeButton.getBoundingClientRect();
-  els.sizeMenu.style.left = `${rect.left + rect.width / 2}px`;
+  const rect = anchor.getBoundingClientRect();
+  els.sizeMenu.style.left = `${Math.min(rect.left + rect.width / 2, window.innerWidth - 132)}px`;
   els.sizeMenu.style.top = `${rect.bottom + 10}px`;
   els.sizeMenu.hidden = false;
 }
 
-function setTool(change) {
+// Changes the size slots of one tool: `slot` selects, `size` resizes the
+// selected slot.
+function setSlots(mode, { slot, size }) {
+  const slots = { ...tool[mode], sizes: [...tool[mode].sizes] };
+  if (slot !== undefined) slots.slot = slot;
+  if (size !== undefined) slots.sizes[slots.slot] = size;
+  setTool({ [mode]: slots });
+}
+
+// While a color picker is open, re-rendering the color slots would remove
+// the picker, so color edits skip that step until the picker closes.
+function setTool(change, { keepColorSlots = false } = {}) {
   tool = { ...tool, ...change };
   localStorage.setItem(KEY.tool, JSON.stringify(tool));
+  if (keepColorSlots) return renderSizeSlots();
   renderTools();
 }
 
 function loadTool() {
   const saved = readJson(KEY.tool) ?? {};
+  const slotsFor = (mode) => {
+    const sizes = Array.isArray(saved[mode]?.sizes) && saved[mode].sizes.length === 3 ? saved[mode].sizes : SIZES[mode].defaults;
+    return { sizes, slot: [0, 1, 2].includes(saved[mode]?.slot) ? saved[mode].slot : 1 };
+  };
+  const colors = Array.isArray(saved.colors) && saved.colors.length === DEFAULT_COLORS.length ? saved.colors : DEFAULT_COLORS;
   return {
     mode: saved.mode === 'erase' ? 'erase' : 'pen',
-    color: saved.color ?? INK_COLORS[0],
-    penSize: saved.penSize ?? saved.width ?? SIZES.pen.fallback,
-    eraserSize: saved.eraserSize ?? SIZES.erase.fallback,
+    pen: slotsFor('pen'),
+    erase: slotsFor('erase'),
+    colors,
+    colorSlot: Number.isInteger(saved.colorSlot) && saved.colorSlot < colors.length ? saved.colorSlot : 0,
   };
 }
 
@@ -385,7 +451,7 @@ function renderPaperMenu() {
 function startStroke(point) {
   if (!current.pageId) return;
   if (tool.mode === 'erase') return startErase(point);
-  const stroke = { id: newId(), color: tool.color, width: tool.penSize, points: [point] };
+  const stroke = { id: newId(), color: penColor(), width: penSize(), points: [point] };
   live = { pageId: current.pageId, strokeId: stroke.id, unsent: [] };
   if (commit({ type: 'stroke.start', pageId: current.pageId, stroke })) {
     pushHistory(current.pageId, { kind: 'draw', strokeId: stroke.id });
@@ -421,7 +487,7 @@ function endStroke() {
 // line as it was before the first cut, and which pieces came from it, so
 // undo can swap the surviving pieces back for the original lines.
 function startErase(point) {
-  erasing = { pageId: current.pageId, radius: tool.eraserSize, last: point, originals: new Map(), rootOf: new Map() };
+  erasing = { pageId: current.pageId, radius: eraserSize(), last: point, originals: new Map(), rootOf: new Map() };
   eraseAt(point);
 }
 
@@ -547,12 +613,10 @@ els.back.onclick = showLibrary;
 els.undo.onclick = undo;
 els.penTool.onclick = () => chooseTool('pen');
 els.eraserTool.onclick = () => chooseTool('erase');
-els.sizeButton.onclick = toggleSizeMenu;
-els.sizeSlider.oninput = () => setTool({ [SIZES[tool.mode].key]: Number(els.sizeSlider.value) });
+els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider.value) });
 els.copy.onclick = copyPage;
 els.prev.onclick = () => go(-1);
 els.next.onclick = () => go(1);
-els.customColor.oninput = () => setTool({ color: els.customColor.value });
 els.follow.onclick = () => {
   follow = !follow;
   localStorage.setItem(KEY.follow, follow ? 'on' : 'off');
@@ -578,7 +642,7 @@ document.addEventListener(
       els.paperMenu.hidden = true;
       closed = true;
     }
-    const onSizeControl = [els.sizeMenu, els.sizeButton, els.penTool, els.eraserTool].some((el) => el.contains(e.target));
+    const onSizeControl = [els.sizeMenu, els.sizeSlots].some((el) => el.contains(e.target));
     if (!els.sizeMenu.hidden && !onSizeControl) {
       els.sizeMenu.hidden = true;
       closed = true;
@@ -598,9 +662,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'e' && !mod) return setTool({ mode: tool.mode === 'erase' ? 'pen' : 'erase' });
   if (e.key === '[' || e.key === ']') {
     const range = SIZES[tool.mode];
-    const size = Math.min(range.max, Math.max(range.min, sizeOf() + (e.key === ']' ? 1 : -1) * range.step * 2));
-    return setTool({ [range.key]: size });
+    const current = tool.mode === 'erase' ? eraserSize() : penSize();
+    const size = Math.min(range.max, Math.max(range.min, current + (e.key === ']' ? 1 : -1) * range.step * 2));
+    return setSlots(tool.mode, { size });
   }
+  if (['1', '2', '3'].includes(e.key) && !mod) return setSlots(tool.mode, { slot: Number(e.key) - 1 });
   if (e.key === 'Escape') return showLibrary();
 });
 
