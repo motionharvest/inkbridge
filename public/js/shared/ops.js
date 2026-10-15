@@ -173,6 +173,19 @@ const handlers = {
     if (!moved) return false;
   },
 
+  // Removes strokes and items in one step. Removing a lasso selection uses
+  // it; undo puts them back with stroke.replace and item.add.
+  'page.remove'(space, { pageId, strokeIds = [], itemIds = [] }) {
+    const page = space.pages[pageId];
+    if (!page || !Array.isArray(strokeIds) || !Array.isArray(itemIds)) return false;
+    const strokes = new Set(strokeIds);
+    const items = new Set(itemIds);
+    const before = page.strokes.length + pageItems(page).length;
+    page.strokes = page.strokes.filter((s) => !strokes.has(s.id));
+    page.items = pageItems(page).filter((i) => !items.has(i.id));
+    if (page.strokes.length + page.items.length === before) return false;
+  },
+
   'stroke.extend'(space, { pageId, strokeId, points }) {
     const page = space.pages[pageId];
     const stroke = page && findStroke(page, strokeId);

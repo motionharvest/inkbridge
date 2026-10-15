@@ -12,6 +12,7 @@ const TAP_MS = 300;
 const TAP_SLOP = 12; // px a finger may move and still count as a tap
 const PULL_DISTANCE = 140; // px of finger travel that arms a new page
 const DOUBLE_TAP_MS = 400; // longest gap between the two taps of a double tap
+const LONG_PRESS_MS = 500; // how long a still press lasts before it is a long press
 
 // The board shows one page and turns pointer input into strokes, swipes,
 // and zoom. A pen or a mouse draws. Fingers never draw, so a palm never
@@ -26,14 +27,15 @@ const DOUBLE_TAP_MS = 400; // longest gap between the two taps of a double tap
 // that place the page inside the stage; every draw call goes through it,
 // so zooming redraws sharp ink instead of stretching pixels.
 export class Board {
-  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover }) {
+  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap }) {
     this.stage = stage;
     this.sheet = stage.querySelector('.sheet');
     this.paperCanvas = stage.querySelector('.paper');
     this.inkCanvas = stage.querySelector('.ink');
     this.paperCtx = this.paperCanvas.getContext('2d');
     this.inkCtx = this.inkCanvas.getContext('2d');
-    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover };
+    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap };
+    this.press = null; // a press that may become a long press; see startPress
     this.page = null;
     this.fit = 1; // scale that fits the whole page in the stage
     this.zoom = 1;
@@ -52,7 +54,7 @@ export class Board {
     this.selectionSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     this.selectionSvg.setAttribute('class', 'selection');
     this.selectionSvg.innerHTML = '<path />';
-    this.selectionSvg.hidden = true;
+    this.selectionSvg.style.display = 'none';
     stage.append(this.selectionSvg);
     this.ring = document.createElement('div');
     this.ring.className = 'eraser-ring';
@@ -155,7 +157,8 @@ export class Board {
 
   placeSelection() {
     const lasso = this.selection;
-    this.selectionSvg.hidden = !lasso?.length;
+    // SVG elements ignore the hidden property, so display does the hiding.
+    this.selectionSvg.style.display = lasso?.length ? '' : 'none';
     if (!lasso?.length) return;
     const s = this.scale;
     const o = this.origin();
@@ -349,10 +352,37 @@ export class Board {
     this.capture(e.pointerId);
     this.showRing(e);
     this.callbacks.onStrokeStart(this.toPage(e));
+    this.startPress(e);
+  }
+
+  // A pen, mouse, or single finger that stays within TAP_SLOP for
+  // LONG_PRESS_MS is a long press. The board reports it with the page point
+  // and the screen point. When the listener returns true, it took the press,
+  // and a finger gesture in progress ends.
+  startPress(e) {
+    this.cancelPress();
+    const point = this.toPage(e);
+    const at = { x: e.clientX, y: e.clientY };
+    const timer = setTimeout(() => {
+      this.press = null;
+      if (!this.callbacks.onLongPress?.(point, at)) return;
+      if (e.pointerType === 'touch') {
+        if (this.gesture?.kind === 'swipe') this.snapBack();
+        this.gesture = { kind: 'done' };
+      }
+    }, LONG_PRESS_MS);
+    this.press = { id: e.pointerId, at, timer };
+  }
+
+  cancelPress(e) {
+    if (!this.press || (e && e.pointerId !== this.press.id)) return;
+    clearTimeout(this.press.timer);
+    this.press = null;
   }
 
   move(e) {
     this.showRing(e);
+    if (this.press?.id === e.pointerId && distance(this.press.at, { x: e.clientX, y: e.clientY }) > TAP_SLOP) this.cancelPress();
     if (this.drawing?.id === e.pointerId) {
       if (e.pointerType === 'pen') this.lastPenAt = Date.now();
       const events = e.getCoalescedEvents?.() ?? [];
@@ -365,6 +395,7 @@ export class Board {
   }
 
   up(e, cancelled = false) {
+    this.cancelPress(e);
     if (this.drawing?.id === e.pointerId) {
       this.drawing = null;
       if (e.pointerType === 'pen') this.ring.hidden = true;
@@ -388,9 +419,11 @@ export class Board {
       this.gesture =
         this.zoom > 1.01
           ? { kind: 'pan', last: at }
-          : { kind: 'swipe', id: e.pointerId, x: at.x, y: at.y, t: performance.now(), dx: 0, dy: 0 };
+          : { kind: 'swipe', id: e.pointerId, x: at.x, y: at.y, t: performance.now(), dx: 0, dy: 0, point: this.toPage(e) };
       this.sheet.style.transition = 'none';
+      this.startPress(e);
     } else if (this.touches.size === 2) {
+      this.cancelPress();
       if (this.gesture?.kind === 'swipe') this.snapBack();
       const [a, b] = [...this.touches.values()];
       const at = midpoint(a, b);
@@ -438,6 +471,11 @@ export class Board {
       const horizontal = Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
       const far = Math.abs(g.dx) > SWIPE_DISTANCE || (velocity > SWIPE_VELOCITY && Math.abs(g.dx) > 20);
       this.gesture = null;
+      if (!cancelled && Math.hypot(g.dx, g.dy) <= TAP_SLOP && performance.now() - g.t < TAP_MS) {
+        this.snapBack();
+        this.callbacks.onTap?.(g.point);
+        return;
+      }
       // Past the last page, only a pull that armed the indicator adds a
       // page. A flick or a short pull springs back.
       const direction = g.dx < 0 ? 1 : -1;

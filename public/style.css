@@ -430,6 +430,25 @@ button.icon {
   border: 1.5px solid #b9b5bf;
 }
 
+.selection-menu {
+  position: fixed;
+  z-index: 10;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.5);
+}
+
+.selection-menu button {
+  min-height: 40px;
+  padding: 0 16px;
+  background: transparent;
+  border-color: transparent;
+  color: #ff8a8a;
+  white-space: nowrap;
+}
+
 .size-menu {
   position: fixed;
   z-index: 10;

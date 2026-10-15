@@ -116,3 +116,17 @@ test('page.move shifts the chosen strokes and items only', () => {
   assert.equal(applyOp(space, { type: 'page.move', pageId, strokeIds: [], itemIds: [], dx: 5, dy: 0 }), false);
   assert.equal(applyOp(space, { type: 'page.move', pageId, strokeIds: [moved.id], dx: 0, dy: 0 }), false);
 });
+
+test('page.remove removes the chosen strokes and items in one step', () => {
+  const { space, pageId } = spaceWithNotebook();
+  const a = { id: newId(), color: '#ffffff', width: 4, points: [[1, 1, 0.5]] };
+  const b = { id: newId(), color: '#ffffff', width: 4, points: [[2, 2, 0.5]] };
+  applyOp(space, { type: 'stroke.start', pageId, stroke: a });
+  applyOp(space, { type: 'stroke.start', pageId, stroke: b });
+  const item = { id: newId(), kind: 'text', text: 'x', x: 0, y: 0, width: 10, height: 10 };
+  applyOp(space, { type: 'item.add', pageId, item });
+  assert.ok(applyOp(space, { type: 'page.remove', pageId, strokeIds: [a.id], itemIds: [item.id] }));
+  assert.deepEqual(space.pages[pageId].strokes.map((s) => s.id), [b.id]);
+  assert.equal(space.pages[pageId].items.length, 0);
+  assert.equal(applyOp(space, { type: 'page.remove', pageId, strokeIds: [a.id], itemIds: [] }), false);
+});

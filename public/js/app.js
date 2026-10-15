@@ -54,6 +54,8 @@ const els = {
   stage: $('#stage'),
   copy: $('#copy'),
   paste: $('#paste'),
+  selectionMenu: $('#selection-menu'),
+  removeSelection: $('#remove-selection'),
   prev: $('#prev'),
   next: $('#next'),
   pageNumber: $('#page-number'),
@@ -83,6 +85,11 @@ const board = new Board(els.stage, {
   onSwipe: (direction) => go(direction),
   onTwoFingerDoubleTap: () => undo(),
   onHover: hover,
+  onLongPress: longPress,
+  onTap: (point) => {
+    // A finger tap outside a selection clears it, like a Pencil tap.
+    if (selection && !insideLasso(selection.lasso, point[0], point[1])) setSelection(null);
+  },
 });
 
 // --- Connection ------------------------------------------------------------
@@ -178,6 +185,7 @@ function afterOp(op) {
     case 'item.add':
     case 'item.remove':
     case 'page.move':
+    case 'page.remove':
     case 'page.paper':
       if (onPage) board.scheduleRedraw();
       break;
@@ -614,6 +622,7 @@ function eraserSize() {
 // region the user can no longer see.
 function chooseTool(mode) {
   els.sizeMenu.hidden = true;
+  selecting = null;
   if (mode !== 'select') setSelection(null);
   setTool({ mode });
 }
@@ -665,6 +674,8 @@ function loadTool() {
 
 function startStroke(point) {
   if (!current.pageId) return;
+  // A lasso or move whose end never arrived must not capture this stroke.
+  selecting = null;
   if (tool.mode === 'erase') return startErase(point);
   if (tool.mode === 'select') return startSelect(point);
   const stroke = { id: newId(), color: penColor(), width: penSize(), points: [point] };
@@ -715,11 +726,18 @@ function startSelect(point) {
     selecting = { kind: 'move', pageId: current.pageId, last: point, dx: 0, dy: 0 };
     return;
   }
+  // With a selection showing, a press outside it only clears it. The next
+  // press starts a new lasso.
+  if (selection) {
+    selecting = { kind: 'none' };
+    return setSelection(null);
+  }
   selecting = { kind: 'draw' };
   setSelection({ lasso: [point.slice(0, 2)], strokeIds: [], itemIds: [] }, { closed: false });
 }
 
 function extendSelect(points) {
+  if (selecting.kind === 'none') return;
   if (selecting.kind === 'draw') {
     selection.lasso.push(...points.map((p) => p.slice(0, 2)));
     return board.setSelection(selection.lasso, { closed: false });
@@ -742,6 +760,7 @@ function extendSelect(points) {
 function endSelect() {
   const done = selecting;
   selecting = null;
+  if (done.kind === 'none') return;
   if (done.kind === 'move') {
     if (done.dx || done.dy) {
       const { strokeIds, itemIds } = selection;
@@ -750,12 +769,14 @@ function endSelect() {
     return;
   }
   const bounds = lassoBounds(selection.lasso);
-  if (bounds.width < 4 || bounds.height < 4) return setSelection(null);
+  // A tap or a short scribble is not a lasso.
+  if (bounds.width < 12 || bounds.height < 12) return setSelection(null);
   setSelection({ lasso: selection.lasso, ...lassoContents(space.pages[current.pageId], selection.lasso) });
 }
 
 function setSelection(next, { closed = true } = {}) {
   selection = next;
+  els.selectionMenu.hidden = true;
   board.setSelection(next?.lasso ?? null, { closed });
   if (!next) board.setOverSelection(false);
 }
@@ -771,6 +792,32 @@ function selectionRegion() {
   const y1 = Math.min(PAGE.height, b.y + b.height + pad);
   if (x1 - x0 < 1 || y1 - y0 < 1) return null;
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+// A long press inside a selection opens a menu with Remove selection.
+// Remove takes effect at once, with no confirmation; Undo brings it back.
+function longPress(point, at) {
+  if (tool.mode !== 'select' || !selection || !insideLasso(selection.lasso, point[0], point[1])) return false;
+  if (selecting?.kind === 'move') endSelect();
+  selecting = { kind: 'none' };
+  const menu = els.selectionMenu;
+  menu.hidden = false;
+  const width = menu.offsetWidth;
+  menu.style.left = `${Math.min(Math.max(8, at.x - width / 2), window.innerWidth - width - 8)}px`;
+  menu.style.top = `${Math.max(8, at.y - menu.offsetHeight - 16)}px`;
+  return true;
+}
+
+function removeSelection() {
+  const page = space.pages[current.pageId];
+  if (!selection || !page) return;
+  const strokeIds = new Set(selection.strokeIds);
+  const itemIds = new Set(selection.itemIds);
+  const strokes = page.strokes.map((stroke, index) => ({ stroke, index })).filter((s) => strokeIds.has(s.stroke.id));
+  const items = pageItems(page).filter((item) => itemIds.has(item.id));
+  setSelection(null);
+  if (!commit({ type: 'page.remove', pageId: page.id, strokeIds: [...strokeIds], itemIds: [...itemIds] })) return;
+  pushHistory(page.id, { kind: 'remove', strokes, items });
 }
 
 function hover(point) {
@@ -838,6 +885,15 @@ function undo() {
     } else if (step.kind === 'move') {
       const { strokeIds, itemIds, dx, dy } = step;
       if (commit({ type: 'page.move', pageId, strokeIds, itemIds, dx: -dx, dy: -dy })) return setSelection(null);
+    } else if (step.kind === 'remove') {
+      // Each stroke goes back at its old index, lowest first, so the
+      // drawing order is the same as before.
+      let restored = false;
+      for (const { stroke, index } of step.strokes) {
+        restored = commit({ type: 'stroke.replace', pageId, add: [stroke], index }) || restored;
+      }
+      for (const item of step.items) restored = commit({ type: 'item.add', pageId, item }) || restored;
+      if (restored) return;
     } else if (step.kind === 'item') {
       if (commit({ type: 'item.remove', pageId, itemId: step.itemId })) return;
     } else {
@@ -1045,6 +1101,7 @@ els.selectTool.onclick = () => chooseTool('select');
 els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider.value) });
 els.copy.onclick = copyPage;
 els.paste.onclick = pasteFromComputer;
+els.removeSelection.onclick = removeSelection;
 document.addEventListener('paste', pasteEvent);
 els.prev.onclick = () => go(-1);
 els.pageNumber.onclick = () => {
@@ -1071,6 +1128,7 @@ document.addEventListener(
       els.sizeMenu.hidden = true;
       closed = true;
     }
+    if (!els.selectionMenu.hidden && !els.selectionMenu.contains(e.target)) els.selectionMenu.hidden = true;
     if (closed && els.stage.contains(e.target)) e.stopPropagation();
   },
   { capture: true },
