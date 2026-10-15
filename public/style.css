@@ -320,38 +320,56 @@ button.icon {
   min-height: 36px;
 }
 
-.color-slot.active {
-  padding-right: 2px;
-}
-
-/* The chevron on the selected color slot. The color input fills it, so a
-   tap opens the system color picker directly. */
-.chevron {
+/* On the selected color slot, the swatch is a label around a hidden color
+   input, so a tap anywhere on it opens the system color picker. */
+.color-slot .swatch {
   position: relative;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 28px;
+}
+
+.color-slot.active .swatch {
   cursor: pointer;
 }
 
-.chevron svg {
-  width: 14px;
-  height: 14px;
+.color-slot .chevron {
+  width: 16px;
+  height: 16px;
   fill: none;
-  stroke: var(--text);
-  stroke-width: 2.2;
+  stroke: #1b1622;
+  stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.6));
 }
 
-.chevron input {
+.color-slot input {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
   cursor: pointer;
+}
+
+.add-color {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.add-color svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2.2;
+  stroke-linecap: round;
 }
 
 .tool {
@@ -435,10 +453,6 @@ button.icon {
   flex: 1;
 }
 
-.nav {
-  padding: 0 8px;
-}
-
 .page-number {
   min-width: 44px;
   text-align: center;
@@ -469,8 +483,6 @@ button.icon {
 #stage {
   position: relative;
   flex: 1;
-  display: grid;
-  place-items: center;
   overflow: hidden;
   touch-action: none;
 }
@@ -491,11 +503,24 @@ button.icon {
 }
 
 .sheet {
-  position: relative;
-  border-radius: 6px;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  position: absolute;
+  inset: 0;
   will-change: transform;
+}
+
+.page-nav {
+  position: absolute;
+  z-index: 3;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: rgb(34 30 41 / 0.85);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
 }
 
 .sheet canvas {

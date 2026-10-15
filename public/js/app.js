@@ -4,10 +4,10 @@ import { cutStrokes } from './erase.js';
 import { renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId } from './shared/ops.js';
 
-// The pen and the eraser each have three size slots, and the pen has five
-// color slots. Tapping a slot selects it. Tapping the selected size slot
-// opens a slider that changes that slot's size. The selected color slot
-// shows a chevron that opens a color picker for that slot. Slots keep their
+// The pen and the eraser each have three size slots, and the pen has color
+// slots. Tapping a slot selects it. Tapping the selected size slot opens a
+// slider that changes that slot's size. Tapping the selected color slot
+// opens a color picker for that slot, and the plus button adds a slot. Slots keep their
 // values, so the toolbar stays the same and becomes a personal palette.
 // Sizes are in page units: line width for the pen, circle radius for the
 // eraser.
@@ -16,6 +16,8 @@ const SIZES = {
   erase: { min: 4, max: 60, step: 1, defaults: [8, 16, 32] },
 };
 const DEFAULT_COLORS = ['#f4f1ea', '#ffd166', '#ff6b8b', '#6ee7b7', '#7cc4ff'];
+const NEW_COLORS = ['#c4a7ff', '#ff8a5c', '#a9a6b0', '#5eead4', '#f9a8d4', '#fde68a'];
+const MAX_COLORS = 12;
 const PAPERS = [
   { name: 'Plum night', color: '#231f29', dots: '#9b99a1' },
   { name: 'Graphite', color: '#1d1e21', dots: '#7d7f85' },
@@ -50,6 +52,7 @@ const els = {
   eraserTool: $('#eraser-tool'),
   sizeSlots: $('#size-slots'),
   colorSlots: $('#color-slots'),
+  addColor: $('#add-color'),
   sizeMenu: $('#size-menu'),
   sizeSlider: $('#size-slider'),
   undo: $('#undo'),
@@ -323,25 +326,26 @@ function renderSizeSlots() {
   els.sizeSlider.value = slots.sizes[slots.slot];
 }
 
+// The selected color slot carries a chevron, and a color input covers the
+// whole swatch, so a second tap anywhere on it opens the picker.
 function renderColorSlots() {
-  els.colorSlots.hidden = tool.mode === 'erase';
+  const erasing = tool.mode === 'erase';
+  els.colorSlots.hidden = erasing;
+  els.addColor.hidden = erasing || tool.colors.length >= MAX_COLORS;
   els.colorSlots.replaceChildren(
     ...tool.colors.map((color, index) => {
       const slot = document.createElement('div');
       slot.className = 'slot color-slot';
       const active = index === tool.colorSlot;
       slot.classList.toggle('active', active);
-      const swatch = document.createElement('button');
+      const swatch = document.createElement(active ? 'label' : 'button');
       swatch.className = 'swatch';
       swatch.style.background = color;
-      swatch.title = color;
-      swatch.onclick = () => setTool({ colorSlot: index });
-      slot.append(swatch);
-      if (active) {
-        const chevron = document.createElement('label');
-        chevron.className = 'chevron';
-        chevron.title = 'Change this color';
-        chevron.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>';
+      swatch.title = active ? 'Change this color' : color;
+      if (!active) {
+        swatch.onclick = () => setTool({ colorSlot: index });
+      } else {
+        swatch.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>';
         const picker = document.createElement('input');
         picker.type = 'color';
         picker.value = color;
@@ -353,12 +357,18 @@ function renderColorSlots() {
           swatch.style.background = picker.value;
         };
         picker.onchange = () => renderTools();
-        chevron.append(picker);
-        slot.append(chevron);
+        swatch.append(picker);
       }
+      slot.append(swatch);
       return slot;
     }),
   );
+}
+
+function addColor() {
+  if (tool.colors.length >= MAX_COLORS) return;
+  const unused = NEW_COLORS.find((c) => !tool.colors.includes(c)) ?? penColor();
+  setTool({ colors: [...tool.colors, unused], colorSlot: tool.colors.length });
 }
 
 function penColor() {
@@ -411,7 +421,8 @@ function loadTool() {
     const sizes = Array.isArray(saved[mode]?.sizes) && saved[mode].sizes.length === 3 ? saved[mode].sizes : SIZES[mode].defaults;
     return { sizes, slot: [0, 1, 2].includes(saved[mode]?.slot) ? saved[mode].slot : 1 };
   };
-  const colors = Array.isArray(saved.colors) && saved.colors.length === DEFAULT_COLORS.length ? saved.colors : DEFAULT_COLORS;
+  const valid = Array.isArray(saved.colors) && saved.colors.length >= 1 && saved.colors.length <= MAX_COLORS;
+  const colors = valid ? saved.colors : DEFAULT_COLORS;
   return {
     mode: saved.mode === 'erase' ? 'erase' : 'pen',
     pen: slotsFor('pen'),
@@ -611,6 +622,7 @@ els.leave.onclick = () => {
 
 els.back.onclick = showLibrary;
 els.undo.onclick = undo;
+els.addColor.onclick = addColor;
 els.penTool.onclick = () => chooseTool('pen');
 els.eraserTool.onclick = () => chooseTool('erase');
 els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider.value) });
@@ -667,6 +679,9 @@ document.addEventListener('keydown', (e) => {
     return setSlots(tool.mode, { size });
   }
   if (['1', '2', '3'].includes(e.key) && !mod) return setSlots(tool.mode, { slot: Number(e.key) - 1 });
+  if (mod && (e.key === '=' || e.key === '+')) return e.preventDefault(), board.zoomBy(1.25);
+  if (mod && e.key === '-') return e.preventDefault(), board.zoomBy(0.8);
+  if (mod && e.key === '0') return e.preventDefault(), board.zoomReset();
   if (e.key === 'Escape') return showLibrary();
 });
 
