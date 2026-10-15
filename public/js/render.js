@@ -7,9 +7,11 @@ const LINE_HEIGHT = 1.3;
 // All drawing functions work in page units. The caller sets the canvas
 // transform that maps page units to device pixels.
 
-export function drawPaper(ctx, paper) {
+// Without `dots`, only the paper color is drawn.
+export function drawPaper(ctx, paper, { dots = true } = {}) {
   ctx.fillStyle = paper.color;
   ctx.fillRect(0, 0, PAGE.width, PAGE.height);
+  if (!dots) return;
   ctx.fillStyle = paper.dots;
   ctx.beginPath();
   for (let y = GRID; y < PAGE.height; y += GRID) {
@@ -70,14 +72,14 @@ export function drawStrokes(ctx, page) {
 
 // Renders a page, paper included, onto a new canvas `scale` times page size.
 // With a region { x, y, width, height } in page units, it renders only that
-// part of the page.
-export function renderPage(page, scale = 1, region = { x: 0, y: 0, width: PAGE.width, height: PAGE.height }) {
+// part of the page. With `dots: false`, the paper has no dot grid.
+export function renderPage(page, scale = 1, region = { x: 0, y: 0, width: PAGE.width, height: PAGE.height }, { dots = true } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(region.width * scale));
   canvas.height = Math.max(1, Math.round(region.height * scale));
   const ctx = canvas.getContext('2d');
   ctx.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale);
-  drawPaper(ctx, page.paper);
+  drawPaper(ctx, page.paper, { dots });
   drawItems(ctx, page);
   drawStrokes(ctx, page);
   return canvas;

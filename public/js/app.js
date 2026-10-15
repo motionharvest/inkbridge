@@ -921,7 +921,9 @@ async function copyPage() {
   // A selected region renders at twice page resolution, so a small region
   // still pastes as a usable image.
   const region = selection && selectionRegion();
-  const canvas = region ? renderPage(page, 2, region) : renderPage(page, 1);
+  // A selection copies without the dot grid, so only the ink and pasted
+  // items show on the paper color.
+  const canvas = region ? renderPage(page, 2, region, { dots: false }) : renderPage(page, 1);
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   const [computer, here] = await Promise.all([copyToComputer(blob), copyHere(blob)]);
   if (computer.ok) return toast("Page copied to the computer's clipboard.");
