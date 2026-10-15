@@ -389,6 +389,11 @@ button.icon {
   stroke-linejoin: round;
 }
 
+.pen-preview {
+  width: 28px;
+  height: 28px;
+}
+
 .size-dot {
   display: block;
   border-radius: 50%;

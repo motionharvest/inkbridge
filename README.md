@@ -18,7 +18,7 @@ The toolbar keeps the drawing controls at its right edge, where a right hand rea
 
 A slot holds one value and keeps it, so the toolbar becomes your own palette. A tap on a slot selects it.
 
-The size slots belong to the selected tool. The Pen has three line widths and the Eraser has three circle sizes, and each tool remembers its own. Each size slot previews its size: a dot of ink for the Pen, and the eraser circle, a dark fill with a light gray outline, for the Eraser. A tap on the selected size slot opens a slider with five tick marks that changes that slot's size.
+The size slots belong to the selected tool. The Pen has three line widths and the Eraser has three circle sizes, and each tool remembers its own. Each size slot previews its size: a short diagonal line at the line width for the Pen, and the eraser circle, a dark fill with a light gray outline, for the Eraser. A tap on the selected size slot opens a slider with five tick marks that changes that slot's size.
 
 The color slots show while the Pen is selected. The selected color slot shows a chevron, and a tap on it opens the color picker and saves the new color to that slot. The plus button adds a color slot, up to twelve.
 

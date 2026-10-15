@@ -297,8 +297,9 @@ function renderTools() {
   renderColorSlots();
 }
 
-// Each size slot previews its size: a dot of ink for the pen, and the
-// eraser's circle, a dark fill with a light gray outline, for the eraser.
+// Each size slot previews its size: a short diagonal line at the pen's
+// thickness, clipped to a circle, for the pen; and the eraser's circle, a
+// dark fill with a light gray outline, for the eraser.
 function renderSizeSlots() {
   const erasing = tool.mode === 'erase';
   const slots = tool[tool.mode];
@@ -308,13 +309,7 @@ function renderSizeSlots() {
       button.className = 'slot size-slot';
       button.classList.toggle('active', index === slots.slot);
       button.title = `${erasing ? 'Eraser' : 'Pen'} size ${size}. Tap again to change it.`;
-      const dot = document.createElement('span');
-      dot.className = 'size-dot';
-      dot.classList.toggle('eraser', erasing);
-      const diameter = erasing ? 6 + size * 0.42 : 4 + size * 1.1;
-      dot.style.width = dot.style.height = `${diameter}px`;
-      dot.style.background = erasing ? '#0d0b10' : penColor();
-      button.append(dot);
+      button.append(erasing ? eraserPreview(size) : penPreview(size));
       button.onclick = () => {
         if (index === slots.slot) return toggleSizeMenu(button);
         els.sizeMenu.hidden = true;
@@ -371,6 +366,29 @@ function addColor() {
   if (tool.colors.length >= MAX_COLORS) return;
   const unused = NEW_COLORS.find((c) => !tool.colors.includes(c)) ?? penColor();
   setTool({ colors: [...tool.colors, unused], colorSlot: tool.colors.length });
+}
+
+function penPreview(size) {
+  const thickness = Math.min(16, Math.max(1.5, size * 0.85));
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 28 28');
+  svg.setAttribute('class', 'pen-preview');
+  svg.setAttribute('aria-hidden', 'true');
+  const clipId = `pen-clip-${size}`.replace('.', '-');
+  svg.innerHTML = `
+    <defs><clipPath id="${clipId}"><circle cx="14" cy="14" r="12" /></clipPath></defs>
+    <line x1="7" y1="21" x2="21" y2="7" clip-path="url(#${clipId})"
+      stroke="${penColor()}" stroke-width="${thickness}" stroke-linecap="round" />`;
+  return svg;
+}
+
+function eraserPreview(size) {
+  const dot = document.createElement('span');
+  dot.className = 'size-dot eraser';
+  dot.style.width = dot.style.height = `${6 + size * 0.42}px`;
+  dot.style.background = '#0d0b10';
+  return dot;
 }
 
 function penColor() {
