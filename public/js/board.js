@@ -10,6 +10,7 @@ const MAX_ZOOM = 6;
 const PAN_MARGIN = 60; // px of empty stage allowed past a zoomed page edge
 const TAP_MS = 300;
 const TAP_SLOP = 12; // px a finger may move and still count as a tap
+const PULL_DISTANCE = 140; // px of finger travel that arms a new page
 const DOUBLE_TAP_MS = 400; // longest gap between the two taps of a double tap
 
 // The board shows one page and turns pointer input into strokes, swipes,
@@ -44,6 +45,9 @@ export class Board {
     this.lastPenAt = 0;
     this.lastTwoFingerTapAt = 0;
     this.eraserRadius = 0;
+    this.edges = { first: true, last: true };
+    this.pull = createPullIndicator();
+    stage.append(this.pull);
     this.ring = document.createElement('div');
     this.ring.className = 'eraser-ring';
     this.ring.hidden = true;
@@ -232,6 +236,22 @@ export class Board {
   snapBack() {
     this.sheet.style.transition = `transform ${SLIDE_MS}ms ease-out`;
     this.sheet.style.transform = 'translateX(0)';
+    this.setPull(0);
+  }
+
+  // Tells the board whether the page is the first or the last, which
+  // changes what a swipe past that edge does.
+  setEdges(edges) {
+    this.edges = edges;
+  }
+
+  // Shows how far a swipe past the last page has pulled, from 0 to 1. At 1
+  // the indicator is armed, and lifting the finger adds a page.
+  setPull(progress) {
+    const p = Math.min(1, Math.max(0, progress));
+    this.pull.style.setProperty('--pull', p);
+    this.pull.classList.toggle('armed', p >= 1);
+    this.pull.classList.toggle('visible', p > 0);
   }
 
   toPage(e) {
@@ -241,6 +261,14 @@ export class Board {
     const y = (e.clientY - rect.top - o.y) / this.scale;
     const pressure = e.pointerType === 'pen' ? e.pressure || 0.5 : 0.6;
     return [round(x, 10), round(y, 10), round(pressure, 100)];
+  }
+
+  // Pointer capture fails for a pointer the browser no longer tracks. The
+  // gesture still works without it, so the failure is ignored.
+  capture(pointerId) {
+    try {
+      this.stage.setPointerCapture(pointerId);
+    } catch {}
   }
 
   stagePoint(e) {
@@ -263,7 +291,7 @@ export class Board {
     this.endGesture();
     this.drawing = { id: e.pointerId };
     if (e.pointerType === 'pen') this.lastPenAt = Date.now();
-    this.stage.setPointerCapture(e.pointerId);
+    this.capture(e.pointerId);
     this.showRing(e);
     this.callbacks.onStrokeStart(this.toPage(e));
   }
@@ -298,7 +326,7 @@ export class Board {
   touchDown(e) {
     if (this.drawing || Date.now() - this.lastPenAt < PEN_QUIET_MS) return;
     this.touches.set(e.pointerId, this.stagePoint(e));
-    this.stage.setPointerCapture(e.pointerId);
+    this.capture(e.pointerId);
     if (this.touches.size === 1) {
       const at = this.stagePoint(e);
       this.gesture =
@@ -328,7 +356,13 @@ export class Board {
     if (g?.kind === 'swipe' && g.id === e.pointerId) {
       g.dx = point.x - g.x;
       g.dy = point.y - g.y;
-      this.sheet.style.transform = `translateX(${g.dx}px)`;
+      // Past the last page, the sheet resists and the pull indicator fills.
+      // Past the first page, the sheet only resists.
+      const pastLast = g.dx < 0 && this.edges.last;
+      const pastFirst = g.dx > 0 && this.edges.first;
+      const shown = pastLast || pastFirst ? rubberBand(g.dx) : g.dx;
+      this.sheet.style.transform = `translateX(${shown}px)`;
+      this.setPull(pastLast ? -g.dx / PULL_DISTANCE : 0);
     } else if (g?.kind === 'pan') {
       this.panBy(point.x - g.last.x, point.y - g.last.y);
       g.last = point;
@@ -348,8 +382,15 @@ export class Board {
       const horizontal = Math.abs(g.dx) > Math.abs(g.dy) * 1.5;
       const far = Math.abs(g.dx) > SWIPE_DISTANCE || (velocity > SWIPE_VELOCITY && Math.abs(g.dx) > 20);
       this.gesture = null;
-      if (!cancelled && horizontal && far) this.callbacks.onSwipe(g.dx < 0 ? 1 : -1);
-      else this.snapBack();
+      // Past the last page, only a pull that armed the indicator adds a
+      // page. A flick or a short pull springs back.
+      const direction = g.dx < 0 ? 1 : -1;
+      const allowed =
+        direction === 1 && this.edges.last ? -g.dx >= PULL_DISTANCE : !(direction === -1 && this.edges.first) && far;
+      if (!cancelled && horizontal && allowed) {
+        this.setPull(0);
+        this.callbacks.onSwipe(direction);
+      } else this.snapBack();
       return;
     }
     if (g?.kind === 'pinch') {
@@ -414,6 +455,26 @@ export class Board {
     this.resetView();
     this.scheduleRedraw();
   }
+}
+
+// Moves less the further it is pulled, so an edge feels elastic.
+function rubberBand(dx) {
+  const limit = 160;
+  return Math.sign(dx) * limit * (1 - Math.exp(-Math.abs(dx) / (limit * 1.2)));
+}
+
+// A ring that fills as the swipe pulls, around a plus that grows. When the ring closes, the button fills with the accent color.
+function createPullIndicator() {
+  const el = document.createElement('div');
+  el.className = 'pull';
+  el.innerHTML = `
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <circle class="pull-track" cx="24" cy="24" r="20" />
+      <circle class="pull-progress" cx="24" cy="24" r="20" pathLength="1" />
+      <path class="pull-plus" d="M24 16v16M16 24h16" />
+    </svg>
+    <span class="pull-label">New page</span>`;
+  return el;
 }
 
 function round(n, factor) {

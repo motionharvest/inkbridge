@@ -8,7 +8,9 @@ The project exists to make one path fast: sketch on the iPad with the Pencil, th
 
 A space holds your notebooks. Each space has a six-digit code, and every device that enters the code sees the same notebooks.
 
-A notebook holds pages. Swipe a finger from right to left to go to the next page. Swipe from left to right to go back. A swipe past the last page adds a new page with the same paper as the page before it.
+A notebook holds pages. Swipe a finger from right to left to go to the next page. Swipe from left to right to go back.
+
+On the last page, a swipe to the left pulls against resistance, and a New page indicator slides in from the right edge. Its ring fills as the finger travels. When the ring closes, the indicator fills with color. Lifting the finger then adds a new page with the same paper as the page before it. Lifting the finger before the ring closes springs the page back and adds nothing.
 
 Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
 
@@ -48,7 +50,7 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | Input | Action |
 | --- | --- |
 | Apple Pencil or mouse | Draw |
-| One finger, swipe right to left | Next page, or a new page at the end |
+| One finger, swipe right to left | Next page; on the last page, a full pull adds a page |
 | One finger, swipe left to right | Previous page |
 | Two fingers, double tap | Undo once |
 | Two fingers, pinch | Zoom in or out, up to six times |

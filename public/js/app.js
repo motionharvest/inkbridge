@@ -280,6 +280,7 @@ function renderChrome() {
   const index = notebook.pageIds.indexOf(current.pageId);
   els.pageNumber.textContent = `${index + 1} / ${notebook.pageIds.length}`;
   els.prev.disabled = index <= 0;
+  board.setEdges({ first: index <= 0, last: index === notebook.pageIds.length - 1 });
   els.follow.classList.toggle('on', follow);
   els.follow.setAttribute('aria-pressed', String(follow));
   renderTools();
