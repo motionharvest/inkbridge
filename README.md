@@ -107,6 +107,6 @@ The server has no authentication. Anyone on the same network who knows a space c
 
 The iPad loads the app over plain HTTP from the computer's address. Browsers allow clipboard writes only on secure pages, so Copy on the iPad downloads a PNG file. Copy on the computer uses `localhost`, which browsers treat as secure, so it writes to the clipboard.
 
-Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, cutting a gap in one line with the Eraser, restoring the line with Undo, adding and editing color slots, and zooming with `Ctrl+=` while drawing stays under the pointer. On the iPad, the user reports that drawing, swiping, and sync work. Pinch zoom on the iPad is not yet tested on a device.
+Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, cutting a gap in one line with the Eraser, restoring the line with Undo, adding and editing color slots, and zooming with `Ctrl+=` while drawing stays under the pointer. On the iPad, the user drew with the Pencil and saw the ink sync to the computer. Pinch zoom on the iPad is not yet tested on a device.
 
 There is no redo, no page reordering, and no page deletion.
