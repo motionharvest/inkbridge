@@ -864,3 +864,9 @@ button.icon {
   font-weight: 500;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
 }
+
+/* Space on both sides sets the size slots apart from the colors and from
+   the tools. */
+#size-slots {
+  margin: 0 12px;
+}
