@@ -63,6 +63,9 @@ const els = {
   prev: $('#prev'),
   next: $('#next'),
   pageNumber: $('#page-number'),
+  pageGrid: $('#page-grid'),
+  gridPages: $('#grid-pages'),
+  gridDone: $('#grid-done'),
   status: $('#status'),
   toast: $('#toast'),
 };
@@ -76,6 +79,8 @@ let live = null; // the stroke this device is drawing: { pageId, strokeId, unsen
 let erasing = null; // the eraser pass in progress; see startErase
 let selecting = null; // the selection drag in progress: { anchor }
 let selection = null; // the selected region in page units, or null
+let grid = { open: false, editing: false }; // the page grid; see openGrid
+let currentIndex = 0; // the current page's position, kept for page.delete
 
 const board = new Board(els.stage, {
   onStrokeStart: startStroke,
@@ -149,6 +154,7 @@ function showView(view, { animate = true } = {}) {
   }
   if (!space.pages[view.pageId]) return false;
   openPage(view.notebookId, view.pageId, { broadcast: false, animate });
+  if (view.screen === 'grid') openGrid({ broadcast: false });
   return true;
 }
 
@@ -177,11 +183,28 @@ function afterOp(op) {
     case 'page.paper':
       if (onPage) board.scheduleRedraw();
       break;
+    case 'page.delete':
+      afterPageDelete(op);
+      break;
     default:
       if (current.notebookId && !findNotebook(space, current.notebookId)) return showLibrary({ broadcast: false });
       renderChrome();
   }
   if (!current.pageId) scheduleLibrary();
+  if (grid.open && op.type !== 'page.delete') scheduleGrid();
+}
+
+// When the page on screen is removed, the page that slid into its place
+// opens, or the new last page when the removed page was last.
+function afterPageDelete(op) {
+  const notebook = findNotebook(space, current.notebookId);
+  if (notebook && op.pageId === current.pageId) {
+    const pageId = notebook.pageIds[Math.min(currentIndex, notebook.pageIds.length - 1)];
+    current = { notebookId: notebook.id, pageId };
+    board.setPage(space.pages[pageId]);
+  }
+  renderChrome();
+  if (grid.open) renderGrid({ flip: true });
 }
 
 // --- Views -----------------------------------------------------------------
@@ -193,6 +216,7 @@ function show(name, error = '') {
 }
 
 function showLibrary({ broadcast = true } = {}) {
+  closeGrid();
   setSelection(null);
   current = { notebookId: null, pageId: null };
   show('library');
@@ -260,7 +284,13 @@ function openNotebook(notebook) {
 function openPage(notebookId, pageId, { broadcast = true, animate = true } = {}) {
   const notebook = findNotebook(space, notebookId);
   if (!notebook || !space.pages[pageId]) return;
-  if (pageId === current.pageId) return;
+  const fromGrid = grid.open;
+  closeGrid();
+  if (pageId === current.pageId) {
+    if (broadcast && fromGrid) socket.emit('view', { screen: 'page', notebookId, pageId });
+    return;
+  }
+  if (fromGrid) animate = false;
   const from = current.notebookId === notebookId ? notebook.pageIds.indexOf(current.pageId) : -1;
   const to = notebook.pageIds.indexOf(pageId);
   const swap = () => {
@@ -281,11 +311,130 @@ function openPage(notebookId, pageId, { broadcast = true, animate = true } = {})
   if (broadcast) socket.emit('view', { screen: 'page', notebookId, pageId });
 }
 
+// --- Page grid -------------------------------------------------------------
+
+// The page grid shows every page of the notebook as a preview. A tap opens a
+// page. Pressing and holding a page enters editing, where each page shows a
+// remove button in its top left corner; the remaining pages close the gap.
+// The grid is a view like a page, so the other devices open it too.
+const LONG_PRESS_MS = 450;
+const TAP_SLOP_PX = 10;
+
+function openGrid({ broadcast = true } = {}) {
+  if (!current.pageId) return;
+  grid = { open: true, editing: false };
+  els.pageGrid.hidden = false;
+  renderGrid();
+  if (broadcast) socket.emit('view', { screen: 'grid', notebookId: current.notebookId, pageId: current.pageId });
+}
+
+function closeGrid() {
+  grid = { open: false, editing: false };
+  els.pageGrid.hidden = true;
+}
+
+function setEditing(editing) {
+  grid.editing = editing;
+  renderGrid();
+}
+
+let gridTimer = null;
+function scheduleGrid() {
+  clearTimeout(gridTimer);
+  gridTimer = setTimeout(() => grid.open && renderGrid(), 400);
+}
+
+// With `flip`, tiles that stay animate from their old place to their new
+// one, so the gap left by a removed page closes visibly.
+function renderGrid({ flip = false } = {}) {
+  const notebook = findNotebook(space, current.notebookId);
+  if (!notebook) return;
+  const before = new Map();
+  if (flip) for (const tile of els.gridPages.children) before.set(tile.dataset.id, tile.getBoundingClientRect());
+  const removable = grid.editing && notebook.pageIds.length > 1;
+  els.pageGrid.classList.toggle('editing', grid.editing);
+  els.gridDone.hidden = !grid.editing;
+  els.gridPages.replaceChildren(
+    ...notebook.pageIds.map((pageId, index) => {
+      const tile = document.createElement('div');
+      tile.className = 'grid-page';
+      tile.dataset.id = pageId;
+      tile.classList.toggle('current', pageId === current.pageId);
+      const thumb = renderPage(space.pages[pageId], 0.16);
+      thumb.className = 'thumb';
+      const label = document.createElement('span');
+      label.className = 'grid-label';
+      label.textContent = index + 1;
+      tile.append(thumb, label);
+      if (removable) {
+        const remove = document.createElement('button');
+        remove.className = 'remove';
+        remove.setAttribute('aria-label', `Remove page ${index + 1}`);
+        remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>';
+        remove.addEventListener('pointerdown', (e) => e.stopPropagation());
+        remove.onclick = (e) => {
+          e.stopPropagation();
+          commit({ type: 'page.delete', notebookId: notebook.id, pageId });
+        };
+        tile.append(remove);
+      }
+      wirePress(tile, notebook.id, pageId);
+      return tile;
+    }),
+  );
+  if (!flip) return;
+  for (const tile of els.gridPages.children) {
+    const old = before.get(tile.dataset.id);
+    if (!old) continue;
+    const now = tile.getBoundingClientRect();
+    const dx = old.left - now.left;
+    const dy = old.top - now.top;
+    if (!dx && !dy) continue;
+    tile.style.transition = 'none';
+    tile.style.transform = `translate(${dx}px, ${dy}px)`;
+    tile.getBoundingClientRect();
+    tile.style.transition = 'transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+    tile.style.transform = '';
+  }
+}
+
+// A short tap opens the page, or leaves editing. A press held for
+// LONG_PRESS_MS enters editing. Moving the finger cancels both, so the grid
+// can still scroll.
+function wirePress(tile, notebookId, pageId) {
+  let press = null;
+  tile.addEventListener('pointerdown', (e) => {
+    press = { x: e.clientX, y: e.clientY, long: false };
+    press.timer = setTimeout(() => {
+      press.long = true;
+      setEditing(true);
+    }, LONG_PRESS_MS);
+  });
+  tile.addEventListener('pointermove', (e) => {
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > TAP_SLOP_PX) {
+      clearTimeout(press.timer);
+      press = null;
+    }
+  });
+  const end = (tapped) => {
+    if (!press) return;
+    clearTimeout(press.timer);
+    const wasLong = press.long;
+    press = null;
+    if (!tapped || wasLong) return;
+    if (grid.editing) setEditing(false);
+    else openPage(notebookId, pageId);
+  };
+  tile.addEventListener('pointerup', () => end(true));
+  tile.addEventListener('pointercancel', () => end(false));
+  tile.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
 // Moves one page forward or back. Moving forward from the last page adds a
 // new page with the same paper as the page it follows.
 function go(direction) {
   const notebook = findNotebook(space, current.notebookId);
-  if (!notebook || board.sliding) return;
+  if (!notebook || board.sliding || grid.open) return;
   const index = notebook.pageIds.indexOf(current.pageId) + direction;
   if (index < 0) return board.snapBack();
   if (index >= notebook.pageIds.length) {
@@ -300,6 +449,7 @@ function renderChrome() {
   if (!notebook) return;
   els.title.textContent = notebook.title;
   const index = notebook.pageIds.indexOf(current.pageId);
+  currentIndex = index;
   els.pageNumber.textContent = `${index + 1} / ${notebook.pageIds.length}`;
   els.prev.disabled = index <= 0;
   board.setEdges({ first: index <= 0, last: index === notebook.pageIds.length - 1 });
@@ -734,6 +884,12 @@ els.selectTool.onclick = () => chooseTool('select');
 els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider.value) });
 els.copy.onclick = copyPage;
 els.prev.onclick = () => go(-1);
+els.pageNumber.onclick = () => {
+  if (!grid.open) return openGrid();
+  closeGrid();
+  socket.emit('view', { screen: 'page', notebookId: current.notebookId, pageId: current.pageId });
+};
+els.gridDone.onclick = () => setEditing(false);
 els.next.onclick = () => go(1);
 els.title.onclick = () => {
   const notebook = findNotebook(space, current.notebookId);
@@ -784,6 +940,8 @@ document.addEventListener('keydown', (e) => {
   if (mod && (e.key === '=' || e.key === '+')) return e.preventDefault(), board.zoomBy(1.25);
   if (mod && e.key === '-') return e.preventDefault(), board.zoomBy(0.8);
   if (mod && e.key === '0') return e.preventDefault(), board.zoomReset();
+  if (e.key === 'Escape' && grid.editing) return setEditing(false);
+  if (e.key === 'Escape' && grid.open) return els.pageNumber.click();
   if (e.key === 'Escape') return selection ? setSelection(null) : showLibrary();
 });
 

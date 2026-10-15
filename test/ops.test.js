@@ -68,3 +68,13 @@ test('stroke.replace swaps a stroke for its pieces in the same place', () => {
   assert.deepEqual(space.pages[pageId].strokes.map((s) => s.id), [ids[0], pieces[0].id, pieces[1].id, ids[2]]);
   assert.equal(applyOp(space, { type: 'stroke.replace', pageId, remove: ['missing1'], add: [] }), false);
 });
+
+test('page.delete closes the gap and keeps at least one page', () => {
+  const { space, notebookId, pageId } = spaceWithNotebook();
+  const second = { id: newId(), paper: {} };
+  applyOp(space, { type: 'page.create', notebookId, page: second });
+  assert.ok(applyOp(space, { type: 'page.delete', notebookId, pageId }));
+  assert.deepEqual(space.notebooks[0].pageIds, [second.id]);
+  assert.equal(space.pages[pageId], undefined);
+  assert.equal(applyOp(space, { type: 'page.delete', notebookId, pageId: second.id }), false);
+});

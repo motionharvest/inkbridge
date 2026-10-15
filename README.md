@@ -10,6 +10,8 @@ A space holds your notebooks. Each space has a six-digit code, and every device 
 
 A notebook holds pages. Swipe a finger from right to left to go to the next page. Swipe from left to right to go back.
 
+A tap on the page number in the bottom left corner opens the page grid, a preview of every page in the notebook. A tap on a preview opens that page. Pressing and holding a preview starts editing: each page shows a remove button in its top left corner, and the pages after a removed page move over to close the gap. Done, `Esc`, or a tap on a preview ends editing. A notebook always keeps at least one page. The other devices open and close the page grid along with you.
+
 On the last page, a swipe to the left pulls against resistance, and a New page indicator slides in from the right edge. Its ring fills as the finger travels. When the ring closes, the indicator fills with color. Lifting the finger then adds a new page with the same paper as the page before it. Lifting the finger before the ring closes springs the page back and adds nothing.
 
 Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
@@ -26,7 +28,7 @@ The Eraser removes only the ink inside a small circle. A ring shows the circle a
 
 Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass restores every line that pass cut.
 
-Every device follows the others, in both directions. The space is always on one view: the notebook list or one page. When any device opens a page, goes back to the notebook list, or creates a notebook and enters it, every other device does the same. A device that joins or reconnects starts on the view the space is on. The computer therefore shows what you see on the iPad without any input.
+Every device follows the others, in both directions. The space is always on one view: the notebook list, one page, or a notebook's page grid. When any device opens a page, goes back to the notebook list, or creates a notebook and enters it, every other device does the same. A device that joins or reconnects starts on the view the space is on. The computer therefore shows what you see on the iPad without any input.
 
 The Select tool, a dashed square, drags a light blue rectangle over the page. While a selection exists, Copy copies only the selected region, at twice page resolution so a small region still pastes as a usable image. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The selection belongs to the device that made it and does not sync.
 

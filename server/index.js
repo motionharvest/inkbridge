@@ -71,6 +71,7 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
       if (!code) return;
       let clean;
       if (view?.screen === 'library') clean = { screen: 'library' };
+      else if (view?.screen === 'grid' && typeof view.pageId === 'string') clean = { screen: 'grid', notebookId: String(view.notebookId), pageId: view.pageId };
       else if (typeof view?.pageId === 'string') clean = { screen: 'page', notebookId: String(view.notebookId), pageId: view.pageId };
       else return;
       store.views.set(code, clean);

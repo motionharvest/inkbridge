@@ -76,6 +76,14 @@ const handlers = {
     notebook.pageIds.splice(at, 0, page.id);
   },
 
+  // Removes a page and closes the gap. A notebook always keeps one page.
+  'page.delete'(space, { notebookId, pageId }) {
+    const notebook = findNotebook(space, notebookId);
+    if (!notebook || notebook.pageIds.length <= 1 || !notebook.pageIds.includes(pageId)) return false;
+    notebook.pageIds = notebook.pageIds.filter((id) => id !== pageId);
+    delete space.pages[pageId];
+  },
+
   'page.paper'(space, { pageId, paper }) {
     const page = space.pages[pageId];
     if (!page) return false;

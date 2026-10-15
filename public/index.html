@@ -76,17 +76,27 @@
         <input id="size-slider" type="range" aria-label="Size of the selected slot" />
         <div class="ticks" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
       </div>
-      <main id="stage">
-        <div class="sheet">
-          <canvas class="paper"></canvas>
-          <canvas class="ink"></canvas>
+      <div class="workspace">
+        <main id="stage">
+          <div class="sheet">
+            <canvas class="paper"></canvas>
+            <canvas class="ink"></canvas>
+          </div>
+        </main>
+        <div id="page-grid" class="page-grid" hidden>
+          <header class="page-grid-bar">
+            <span class="page-grid-title">Pages</span>
+            <span class="page-grid-hint">Press and hold a page to remove pages</span>
+            <button id="grid-done" class="primary" hidden>Done</button>
+          </header>
+          <div id="grid-pages" class="grid-pages"></div>
         </div>
         <div class="page-nav">
           <button id="prev" class="quiet" title="Previous page (←)" aria-label="Previous page">‹</button>
-          <span id="page-number" class="page-number"></span>
+          <button id="page-number" class="quiet page-number" title="Show all pages"></button>
           <button id="next" class="quiet" title="Next page, or a new page at the end (→)" aria-label="Next page">›</button>
         </div>
-      </main>
+      </div>
     </section>
 
     <div id="toast" role="status" hidden></div>
