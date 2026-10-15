@@ -89,13 +89,26 @@ const handlers = {
     page.strokes.push(clean);
   },
 
-  // Puts a whole stroke back at `index`. Undo uses it to restore erased ink.
-  'stroke.add'(space, { pageId, stroke, index }) {
+  // Removes some strokes and inserts others in one step. The eraser uses
+  // it to swap a line for the pieces left after a cut, and undo uses it to
+  // swap the pieces back for the line. New strokes go in at `index`, or
+  // where the first removed stroke was, or at the end.
+  'stroke.replace'(space, { pageId, remove = [], add = [], index }) {
     const page = space.pages[pageId];
-    const clean = page && cleanStroke(page, stroke);
-    if (!clean) return false;
-    const at = Number.isInteger(index) ? clamp(index, 0, page.strokes.length) : page.strokes.length;
-    page.strokes.splice(at, 0, clean);
+    if (!page || !Array.isArray(remove) || !Array.isArray(add)) return false;
+    const removing = new Set(remove);
+    const first = page.strokes.findIndex((s) => removing.has(s.id));
+    const kept = page.strokes.filter((s) => !removing.has(s.id));
+    const before = page.strokes;
+    page.strokes = kept;
+    const added = [];
+    for (const stroke of add) {
+      const clean = cleanStroke(page, stroke);
+      if (clean && !added.some((s) => s.id === clean.id)) added.push(clean);
+    }
+    if (kept.length === before.length && !added.length) return false;
+    const at = Number.isInteger(index) ? index : first >= 0 ? first : kept.length;
+    kept.splice(clamp(at, 0, kept.length), 0, ...added);
   },
 
   'stroke.extend'(space, { pageId, strokeId, points }) {

@@ -59,14 +59,12 @@ test('deleting a notebook deletes its pages', () => {
   assert.equal(space.pages[pageId], undefined);
 });
 
-test('stroke.add restores a stroke at its old position', () => {
+test('stroke.replace swaps a stroke for its pieces in the same place', () => {
   const { space, pageId } = spaceWithNotebook();
-  const first = { id: newId(), color: '#ffffff', width: 4, points: [[0, 0, 1]] };
-  const second = { id: newId(), color: '#ffffff', width: 4, points: [[5, 5, 1]] };
-  applyOp(space, { type: 'stroke.start', pageId, stroke: first });
-  applyOp(space, { type: 'stroke.start', pageId, stroke: second });
-  applyOp(space, { type: 'stroke.remove', pageId, strokeId: first.id });
-  assert.ok(applyOp(space, { type: 'stroke.add', pageId, stroke: first, index: 0 }));
-  assert.deepEqual(space.pages[pageId].strokes.map((s) => s.id), [first.id, second.id]);
-  assert.equal(applyOp(space, { type: 'stroke.add', pageId, stroke: first, index: 0 }), false);
+  const ids = [newId(), newId(), newId()];
+  for (const id of ids) applyOp(space, { type: 'stroke.start', pageId, stroke: { id, color: '#ffffff', width: 4, points: [[0, 0, 1]] } });
+  const pieces = [newId(), newId()].map((id) => ({ id, color: '#ffffff', width: 4, points: [[1, 1, 1], [2, 2, 1]] }));
+  assert.ok(applyOp(space, { type: 'stroke.replace', pageId, remove: [ids[1]], add: pieces }));
+  assert.deepEqual(space.pages[pageId].strokes.map((s) => s.id), [ids[0], pieces[0].id, pieces[1].id, ids[2]]);
+  assert.equal(applyOp(space, { type: 'stroke.replace', pageId, remove: ['missing1'], add: [] }), false);
 });

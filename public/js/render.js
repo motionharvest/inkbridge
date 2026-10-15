@@ -19,9 +19,9 @@ export function drawPaper(ctx, paper) {
   ctx.fill();
 }
 
-// Draws a stroke from point index `from` onward. Each segment depends only on
-// points up to its own index, so drawing new points as they arrive gives the
-// same pixels as redrawing the whole stroke later.
+// Draws a stroke from point index `from` onward. Each curve depends only on
+// points up to its own index, so drawing new points as they arrive gives
+// nearly the same pixels as redrawing the whole stroke later.
 export function drawStroke(ctx, stroke, from = 0) {
   const pts = stroke.points;
   if (!pts.length) return;
@@ -45,6 +45,19 @@ export function drawStroke(ctx, stroke, from = 0) {
     ctx.beginPath();
     ctx.moveTo(start[0], start[1]);
     ctx.quadraticCurveTo(a[0], a[1], end[0], end[1]);
+    ctx.stroke();
+  }
+
+  // The curves above end halfway along the last segment. This straight
+  // tail reaches the final point, so a cut line ends exactly at the cut.
+  if (pts.length > 1) {
+    const a = pts.at(-2);
+    const b = pts.at(-1);
+    const start = midpoint(a, b);
+    ctx.lineWidth = widthAt(stroke, b[2]);
+    ctx.beginPath();
+    ctx.moveTo(start[0], start[1]);
+    ctx.lineTo(b[0], b[1]);
     ctx.stroke();
   }
 }

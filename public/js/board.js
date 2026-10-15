@@ -23,6 +23,12 @@ export class Board {
     this.drawing = null;
     this.swipe = null;
     this.lastPenAt = 0;
+    this.eraserRadius = 0;
+    this.ring = document.createElement('div');
+    this.ring.className = 'eraser-ring';
+    this.ring.hidden = true;
+    stage.append(this.ring);
+    stage.addEventListener('pointerleave', () => (this.ring.hidden = true));
 
     new ResizeObserver(() => this.layout()).observe(stage);
     stage.addEventListener('pointerdown', (e) => this.down(e));
@@ -37,6 +43,23 @@ export class Board {
     for (const type of ['touchstart', 'touchmove', 'touchend']) {
       stage.addEventListener(type, (e) => e.cancelable && e.preventDefault(), { passive: false });
     }
+  }
+
+  // A radius above zero shows a ring of that size, in page units, at the
+  // pointer. Zero hides it.
+  setEraser(radius) {
+    this.eraserRadius = radius;
+    this.stage.classList.toggle('erasing', radius > 0);
+    if (!radius) this.ring.hidden = true;
+  }
+
+  showRing(e) {
+    if (!this.eraserRadius || e.pointerType === 'touch') return;
+    const size = this.eraserRadius * 2 * this.scale;
+    const stageRect = this.stage.getBoundingClientRect();
+    this.ring.style.width = this.ring.style.height = `${size}px`;
+    this.ring.style.transform = `translate(${e.clientX - stageRect.left - size / 2}px, ${e.clientY - stageRect.top - size / 2}px)`;
+    this.ring.hidden = false;
   }
 
   setPage(page) {
@@ -71,6 +94,16 @@ export class Board {
     this.inkCtx.clearRect(0, 0, this.inkCanvas.width, this.inkCanvas.height);
     this.inkCtx.restore();
     drawStrokes(this.inkCtx, this.page);
+  }
+
+  // Redraws once before the next frame, however many times it is asked.
+  scheduleRedraw() {
+    if (this.redrawPending) return;
+    this.redrawPending = true;
+    requestAnimationFrame(() => {
+      this.redrawPending = false;
+      this.redraw();
+    });
   }
 
   // Draws the points of `stroke` from index `from` onward, without a redraw.
@@ -130,10 +163,12 @@ export class Board {
     this.drawing = { id: e.pointerId };
     if (e.pointerType === 'pen') this.lastPenAt = Date.now();
     this.stage.setPointerCapture(e.pointerId);
+    this.showRing(e);
     this.callbacks.onStrokeStart(this.toPage(e));
   }
 
   move(e) {
+    this.showRing(e);
     if (this.drawing?.id === e.pointerId) {
       if (e.pointerType === 'pen') this.lastPenAt = Date.now();
       const events = e.getCoalescedEvents?.() ?? [];
@@ -151,6 +186,7 @@ export class Board {
   up(e, cancelled = false) {
     if (this.drawing?.id === e.pointerId) {
       this.drawing = null;
+      if (e.pointerType === 'pen') this.ring.hidden = true;
       this.callbacks.onStrokeEnd();
       return;
     }

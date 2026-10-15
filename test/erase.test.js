@@ -1,20 +1,32 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { segmentDistance, strokesTouching } from '../public/js/erase.js';
+import { cutPoints, cutStrokes } from '../public/js/erase.js';
 
-const line = (id, points) => ({ id, color: '#ffffff', width: 4, points: points.map(([x, y]) => [x, y, 0.5]) });
+const pts = (...xy) => xy.map(([x, y]) => [x, y, 0.5]);
 
-test('the eraser removes only the strokes its path touches', () => {
-  const page = {
-    strokes: [line('a', [[0, 0], [100, 0]]), line('b', [[0, 200], [100, 200]]), line('c', [[300, 300]])],
-  };
-  const crossing = strokesTouching(page, [50, -40], [50, 40]);
-  assert.deepEqual(crossing.map((s) => s.id), ['a']);
-  assert.deepEqual(strokesTouching(page, [305, 300], [305, 300]).map((s) => s.id), ['c']);
-  assert.deepEqual(strokesTouching(page, [50, 100], [60, 100]), []);
+test('a cut in the middle of a line leaves two pieces that end at the circle', () => {
+  const pieces = cutPoints(pts([0, 0], [100, 0]), [50, 0], 10);
+  assert.equal(pieces.length, 2);
+  assert.deepEqual(pieces[0].map((p) => p[0]), [0, 40]);
+  assert.deepEqual(pieces[1].map((p) => p[0]), [60, 100]);
 });
 
-test('segment distance is zero for crossing segments', () => {
-  assert.equal(segmentDistance([0, -1], [0, 1], [-1, 0], [1, 0]), 0);
-  assert.equal(segmentDistance([0, 0], [10, 0], [0, 5], [10, 5]), 5);
+test('a cut at the end of a line shortens it', () => {
+  const pieces = cutPoints(pts([0, 0], [100, 0]), [100, 0], 10);
+  assert.deepEqual(pieces.map((p) => p.map((q) => q[0])), [[0, 90]]);
+});
+
+test('a circle that misses the line leaves it untouched', () => {
+  assert.equal(cutPoints(pts([0, 0], [100, 0]), [50, 30], 10), null);
+});
+
+test('a circle around a whole short line removes it', () => {
+  assert.deepEqual(cutPoints(pts([0, 0], [4, 0]), [2, 0], 10), []);
+  assert.deepEqual(cutPoints(pts([3, 3]), [0, 0], 10), []);
+});
+
+test('cutStrokes reaches the edge of wide lines', () => {
+  const page = { strokes: [{ id: 'a', color: '#ffffff', width: 20, points: pts([0, 0], [100, 0]) }] };
+  assert.equal(cutStrokes(page, [50, 18], 10).length, 1);
+  assert.equal(cutStrokes(page, [50, 25], 10).length, 0);
 });

@@ -1,11 +1,12 @@
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
-import { strokesTouching } from './erase.js';
+import { cutStrokes } from './erase.js';
 import { renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, newId } from './shared/ops.js';
 
 const INK_COLORS = ['#f4f1ea', '#a9a6b0', '#ffd166', '#ff8a5c', '#ff6b8b', '#6ee7b7', '#7cc4ff', '#c4a7ff'];
 const WIDTHS = [2, 4, 7, 12];
+const ERASER_RADIUS = 12; // page units
 const PAPERS = [
   { name: 'Plum night', color: '#231f29', dots: '#9b99a1' },
   { name: 'Graphite', color: '#1d1e21', dots: '#7d7f85' },
@@ -60,7 +61,7 @@ let follow = localStorage.getItem(KEY.follow) !== 'off';
 let peers = 1;
 const history = new Map(); // pageId -> this device's undo steps on that page
 let live = null; // the stroke this device is drawing: { pageId, strokeId, unsent: [] }
-let erasing = null; // the eraser gesture in progress: { pageId, last, removed: [] }
+let erasing = null; // the eraser pass in progress; see startErase
 
 const board = new Board(els.stage, {
   onStrokeStart: startStroke,
@@ -130,9 +131,9 @@ function afterOp(op) {
       }
       break;
     case 'stroke.remove':
-    case 'stroke.add':
+    case 'stroke.replace':
     case 'page.paper':
-      if (onPage) board.redraw();
+      if (onPage) board.scheduleRedraw();
       break;
     default:
       if (current.notebookId && !findNotebook(space, current.notebookId)) return showLibrary();
@@ -277,7 +278,7 @@ function renderTools() {
   els.customColor.parentElement.classList.toggle('active', tool.mode !== 'erase' && !INK_COLORS.includes(tool.color));
   els.eraser.classList.toggle('on', tool.mode === 'erase');
   els.eraser.setAttribute('aria-pressed', String(tool.mode === 'erase'));
-  els.stage.classList.toggle('erasing', tool.mode === 'erase');
+  board.setEraser(tool.mode === 'erase' ? ERASER_RADIUS : 0);
   els.widths.replaceChildren(
     ...WIDTHS.map((width) => {
       const button = document.createElement('button');
@@ -361,34 +362,48 @@ function endStroke() {
   live = null;
 }
 
-// The eraser removes every whole stroke its path touches. One gesture is
-// one undo step, however many strokes it removes.
+// The eraser cuts away the ink inside a small circle and leaves the rest of
+// each line in place. One pass is one undo step. The pass remembers each
+// line as it was before the first cut, and which pieces came from it, so
+// undo can swap the surviving pieces back for the original lines.
 function startErase(point) {
-  erasing = { pageId: current.pageId, last: point, removed: [] };
-  eraseAlong(point, point);
+  erasing = { pageId: current.pageId, last: point, originals: new Map(), rootOf: new Map() };
+  eraseAt(point);
 }
 
 function extendErase(points) {
   for (const point of points) {
-    eraseAlong(erasing.last, point);
+    const [x0, y0] = erasing.last;
+    const steps = Math.ceil(Math.hypot(point[0] - x0, point[1] - y0) / (ERASER_RADIUS / 2));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      eraseAt([x0 + (point[0] - x0) * t, y0 + (point[1] - y0) * t]);
+    }
     erasing.last = point;
   }
 }
 
-function eraseAlong(from, to) {
+function eraseAt(center) {
   const page = space.pages[erasing.pageId];
   if (!page) return;
-  for (const stroke of strokesTouching(page, from, to)) {
-    const index = page.strokes.indexOf(stroke);
-    if (commit({ type: 'stroke.remove', pageId: page.id, strokeId: stroke.id })) {
-      erasing.removed.push({ stroke, index });
+  for (const { stroke, pieces } of cutStrokes(page, center, ERASER_RADIUS)) {
+    const root = erasing.rootOf.get(stroke.id) ?? stroke.id;
+    if (!erasing.originals.has(root)) {
+      erasing.originals.set(root, { stroke, index: page.strokes.indexOf(stroke) });
     }
+    const add = pieces.map((points) => ({ id: newId(), color: stroke.color, width: stroke.width, points }));
+    for (const piece of add) erasing.rootOf.set(piece.id, root);
+    commit({ type: 'stroke.replace', pageId: page.id, remove: [stroke.id], add });
   }
 }
 
 function endErase() {
-  if (erasing.removed.length) pushHistory(erasing.pageId, { kind: 'erase', removed: erasing.removed });
+  const { pageId, originals, rootOf } = erasing;
   erasing = null;
+  if (!originals.size) return;
+  const pieces = [...rootOf.keys()];
+  const restore = [...originals.values()].sort((a, b) => a.index - b.index);
+  pushHistory(pageId, { kind: 'erase', pieces, restore });
 }
 
 function pushHistory(pageId, step) {
@@ -406,11 +421,14 @@ function undo() {
     if (step.kind === 'draw') {
       if (commit({ type: 'stroke.remove', pageId, strokeId: step.strokeId })) return;
     } else {
-      let restored = false;
-      for (const { stroke, index } of [...step.removed].reverse()) {
-        restored = commit({ type: 'stroke.add', pageId, stroke, index }) || restored;
-      }
-      if (restored) return;
+      const op = {
+        type: 'stroke.replace',
+        pageId,
+        remove: step.pieces,
+        add: step.restore.map((r) => r.stroke),
+        index: step.restore[0].index,
+      };
+      if (commit(op)) return;
     }
   }
 }

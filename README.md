@@ -14,9 +14,9 @@ Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default pa
 
 The toolbar has eight ink colors, a custom color picker, four line widths, an Eraser, and Undo.
 
-The Eraser removes whole lines. Each line it touches disappears in one piece, so one pass can clear one line or several. Choosing a color or a line width switches back to the pen.
+The Eraser removes only the ink inside a small circle. A ring shows the circle at the pointer while the Eraser is on. A pass through the middle of a line splits it into two lines, and the rest of the line stays. Choosing a color or a line width switches back to the pen.
 
-Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass brings back every line that pass removed.
+Undo reverses this device's last step on the current page. A step is one drawn line or one eraser pass, so Undo after an eraser pass restores every line that pass cut.
 
 Follow is on by default. When Follow is on, a device jumps to whichever page another device in the space opens. The computer therefore shows the page you are drawing on the iPad without any input.
 
@@ -69,7 +69,7 @@ public/
   js/app.js                 state, screens, Socket.IO wiring, copy
   js/board.js               canvas sizing, Pencil and finger input, page slides
   js/render.js              paper, ink, and PNG rendering
-  js/erase.js               which lines an eraser pass touches
+  js/erase.js               clips lines against the eraser circle
   js/shared/ops.js          the op definitions, shared with the server
 server/
   index.js                  Express static files and Socket.IO rooms
@@ -93,6 +93,6 @@ The server has no authentication. Anyone on the same network who knows a space c
 
 The iPad loads the app over plain HTTP from the computer's address. Browsers allow clipboard writes only on secure pages, so Copy on the iPad downloads a PNG file. Copy on the computer uses `localhost`, which browsers treat as secure, so it writes to the clipboard.
 
-Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, erasing one line of two, and restoring it with Undo. iPad behavior, including Pencil pressure and finger swipes, is not yet tested on a device.
+Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, cutting a gap in one line with the Eraser, and restoring the line with Undo. iPad behavior, including Pencil pressure and finger swipes, is not yet tested on a device.
 
-There is no partial eraser, no redo, no page reordering, and no page deletion.
+There is no redo, no page reordering, and no page deletion.

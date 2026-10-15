@@ -1,28 +1,81 @@
-// Finds the strokes an eraser touches as it moves from one point to the next.
+// Cuts strokes with a round eraser. A stroke's centre line is clipped
+// against a circle, and the parts outside the circle become new strokes.
 // Points are [x, y, pressure] in page units.
-
-const ERASER_RADIUS = 10;
 
 const boxes = new WeakMap(); // stroke -> { length, box }
 
-export function strokesTouching(page, from, to) {
-  const hits = [];
+// Returns one entry for each stroke the circle touches, with the point lists
+// of the pieces that remain. A stroke the circle removes entirely has no
+// pieces. The reach grows by half the line width, so the circle erases ink
+// it touches at the line's edge, not only at its centre.
+export function cutStrokes(page, center, radius) {
+  const cuts = [];
   for (const stroke of page.strokes) {
-    const reach = ERASER_RADIUS + stroke.width / 2;
+    const reach = radius + stroke.width / 2;
     const box = boundsOf(stroke);
-    if (Math.max(from[0], to[0]) < box.minX - reach || Math.min(from[0], to[0]) > box.maxX + reach) continue;
-    if (Math.max(from[1], to[1]) < box.minY - reach || Math.min(from[1], to[1]) > box.maxY + reach) continue;
-    if (touches(stroke.points, from, to, reach)) hits.push(stroke);
+    if (center[0] < box.minX - reach || center[0] > box.maxX + reach) continue;
+    if (center[1] < box.minY - reach || center[1] > box.maxY + reach) continue;
+    const pieces = cutPoints(stroke.points, center, reach);
+    if (pieces) cuts.push({ stroke, pieces });
   }
-  return hits;
+  return cuts;
 }
 
-function touches(points, from, to, reach) {
-  if (points.length === 1) return segmentDistance(from, to, points[0], points[0]) <= reach;
+// Returns the point lists left after removing the parts of a line inside the
+// circle, or null when the circle does not touch the line.
+export function cutPoints(points, center, reach) {
+  const inside = (p) => Math.hypot(p[0] - center[0], p[1] - center[1]) <= reach;
+  if (points.length === 1) return inside(points[0]) ? [] : null;
+
+  const pieces = [];
+  let touched = inside(points[0]);
+  let piece = touched ? [] : [points[0]];
   for (let i = 1; i < points.length; i++) {
-    if (segmentDistance(from, to, points[i - 1], points[i]) <= reach) return true;
+    const a = points[i - 1];
+    const b = points[i];
+    const span = insideSpan(a, b, center, reach);
+    if (!span) {
+      piece.push(b);
+      continue;
+    }
+    touched = true;
+    const [enter, leave] = span;
+    if (piece.length) {
+      piece.push(lerp(a, b, enter));
+      pieces.push(piece);
+    }
+    piece = leave < 1 ? [lerp(a, b, leave), b] : [];
   }
-  return false;
+  if (!touched) return null;
+  pieces.push(piece);
+  return pieces.filter((p) => p.length >= 2);
+}
+
+// The part of segment ab, as fractions from 0 to 1, that lies inside the
+// circle. Returns null when no part of the segment is inside.
+function insideSpan(a, b, center, reach) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const fx = a[0] - center[0];
+  const fy = a[1] - center[1];
+  const qa = dx * dx + dy * dy;
+  const qc = fx * fx + fy * fy - reach * reach;
+  if (qa === 0) return qc <= 0 ? [0, 1] : null;
+  const qb = 2 * (fx * dx + fy * dy);
+  const disc = qb * qb - 4 * qa * qc;
+  if (disc < 0) return null;
+  const root = Math.sqrt(disc);
+  const enter = Math.max(0, (-qb - root) / (2 * qa));
+  const leave = Math.min(1, (-qb + root) / (2 * qa));
+  return enter < leave ? [enter, leave] : null;
+}
+
+function lerp(a, b, t) {
+  return [
+    Math.round((a[0] + (b[0] - a[0]) * t) * 10) / 10,
+    Math.round((a[1] + (b[1] - a[1]) * t) * 10) / 10,
+    a[2] + (b[2] - a[2]) * t,
+  ];
 }
 
 // The bounding box is cached and rebuilt when the stroke gains points.
@@ -38,27 +91,4 @@ function boundsOf(stroke) {
   }
   boxes.set(stroke, { length: stroke.points.length, box });
   return box;
-}
-
-// The shortest distance between segment ab and segment cd.
-export function segmentDistance(a, b, c, d) {
-  if (segmentsCross(a, b, c, d)) return 0;
-  return Math.min(pointToSegment(a, c, d), pointToSegment(b, c, d), pointToSegment(c, a, b), pointToSegment(d, a, b));
-}
-
-function pointToSegment(p, a, b) {
-  const dx = b[0] - a[0];
-  const dy = b[1] - a[1];
-  const lengthSquared = dx * dx + dy * dy;
-  const t = lengthSquared ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSquared)) : 0;
-  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
-}
-
-function segmentsCross(a, b, c, d) {
-  const side = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
-  const d1 = side(c, d, a);
-  const d2 = side(c, d, b);
-  const d3 = side(a, b, c);
-  const d4 = side(a, b, d);
-  return d1 * d2 < 0 && d3 * d4 < 0;
 }
