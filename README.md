@@ -18,7 +18,7 @@ On the last page, a swipe to the left pulls against resistance, and a New page i
 
 Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
 
-The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are the color slots, a plus button, three size slots, the Pen, the Eraser, and the Select tool. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
+The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are the color slots, a plus button, three size slots, the Pen, the Eraser, and the Lasso. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
 
 A slot holds one value and keeps it, so the toolbar becomes your own palette. A tap on a slot selects it.
 
@@ -32,7 +32,7 @@ Undo reverses this device's last step on the current page. A step is one drawn l
 
 Every device follows the others, in both directions. The space is always on one view: the notebook list, one page, or a notebook's page grid. When any device opens a page, goes back to the notebook list, or creates a notebook and enters it, every other device does the same. A device that joins or reconnects starts on the view the space is on. The computer therefore shows what you see on the iPad without any input.
 
-The Select tool, a dashed square, drags a light blue rectangle over the page. While a selection exists, Copy copies only the selected region, at twice page resolution so a small region still pastes as a usable image. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The selection belongs to the device that made it and does not sync.
+The Lasso tool selects by drawing a freehand loop around ink and pasted items. A line is selected when at least half of it is inside the loop. A pasted item is selected when its center is inside. Pressing inside the loop and dragging, with the Pencil or the mouse, moves the selection, and every device sees it move. Pressing outside the loop starts a new one. While a selection exists, Copy copies the rectangle around the loop, at twice page resolution so a small region still pastes as a usable image. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The loop belongs to the device that drew it and does not sync. Undo after a move moves the selection back.
 
 Paste puts an image or a block of text on the page. A pasted item sits under the ink, so you can draw on a pasted picture and copy the result back out. `Ctrl+V` or `⌘V` pastes the clipboard of the device you press it on. The Paste button in the toolbar pastes the computer's clipboard, read by the server, so the iPad can paste what you copied on the computer. An image keeps its pixel size, shrinks to fit the part of the page on screen, and lands in the middle of it. Text takes the selected pen color and wraps at 900 page units. A second paste onto the same spot moves down and to the right. Undo removes a paste.
 
@@ -71,7 +71,7 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `Ctrl+V` or `⌘V` | Paste this device's clipboard onto the page |
 | The Paste button | Paste the computer's clipboard onto the page |
 | `E` | Switch between the Pen and the Eraser |
-| `S` | Switch between the Pen and the Select tool |
+| `S` | Switch between the Pen and the Lasso |
 | `1`, `2`, `3` | Select a size slot |
 | `[` and `]` | Make the selected size slot smaller or larger |
 | `Ctrl+Z` or `⌘Z` | Undo |
@@ -110,6 +110,7 @@ public/
   js/board.js               the page view, zoom, Pencil and finger input, page slides
   js/render.js              paper, pasted items, ink, and PNG rendering
   js/erase.js               clips lines against the eraser circle
+  js/lasso.js               what a lasso loop contains
   js/shared/ops.js          the op definitions, shared with the server
 server/
   index.js                  Express static files and Socket.IO rooms
@@ -141,8 +142,8 @@ Verified on a Linux desktop in Brave: creating a space, creating a notebook, dra
 
 Pasting from the computer's clipboard works on Linux only. On macOS and Windows the Paste button reports that it is not supported, and `Ctrl+V` on the computer's own browser still works.
 
-A pasted item cannot be moved, resized, or erased. Undo on the device that pasted it is the only way to remove it. Removing a page or notebook leaves its pasted images in `data/assets/`.
+A pasted item can be moved with the Lasso but cannot be resized or erased. Undo on the device that pasted it is the only way to remove it. A selection cannot be deleted, resized, or rotated. Removing a page or notebook leaves its pasted images in `data/assets/`.
 
-Verified for Paste on the Linux desktop in Brave: the Paste button placed the image from the computer's clipboard on the page, ink drew over it, `Ctrl+V` pasted the same image, and both items reached the server's saved space. Pasting text and pasting on the iPad are not yet tested.
+Verified for Paste on the Linux desktop in Brave: the Paste button placed the image from the computer's clipboard on the page, ink drew over it, `Ctrl+V` pasted the same image, and both items reached the server's saved space. Pasting text and pasting on the iPad are not yet tested. The Lasso is verified with the mouse on the desktop: a loop selected two images and a line, a drag moved them, the server saved the new positions, and Undo moved them back. The Lasso is not yet tested with the Pencil.
 
 There is no redo and no page reordering.

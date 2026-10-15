@@ -1,6 +1,7 @@
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
 import { cutStrokes } from './erase.js';
+import { insideLasso, lassoBounds, lassoContents } from './lasso.js';
 import { loadImage, measureText, onImageLoad, renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
 
@@ -79,8 +80,8 @@ let peers = 1;
 const undoSteps = new Map(); // pageId -> this device's undo steps on that page
 let live = null; // the stroke this device is drawing: { pageId, strokeId, unsent: [] }
 let erasing = null; // the eraser pass in progress; see startErase
-let selecting = null; // the selection drag in progress: { anchor }
-let selection = null; // the selected region in page units, or null
+let selecting = null; // the lasso or move in progress; see startSelect
+let selection = null; // the lasso selection, or null; see startSelect
 let grid = { open: false, editing: false }; // the page grid; see openGrid
 let currentIndex = 0; // the current page's position, kept for page.delete
 
@@ -90,6 +91,7 @@ const board = new Board(els.stage, {
   onStrokeEnd: endStroke,
   onSwipe: (direction) => go(direction),
   onTwoFingerDoubleTap: () => undo(),
+  onHover: hover,
 });
 
 // --- Connection ------------------------------------------------------------
@@ -184,6 +186,7 @@ function afterOp(op) {
     case 'stroke.replace':
     case 'item.add':
     case 'item.remove':
+    case 'page.move':
     case 'page.paper':
       if (onPage) board.scheduleRedraw();
       break;
@@ -732,34 +735,81 @@ function endStroke() {
   live = null;
 }
 
-// The selection tool drags a rectangle on the page. While a selection
-// exists, Copy copies only that region. A tap without a drag clears it.
-// The selection belongs to this device and is not synced.
+// The lasso tool draws a freehand outline around ink and pasted items.
+// Strokes mostly inside it and items whose center is inside it become the
+// selection. Pressing inside the outline and dragging moves the selection;
+// pressing outside starts a new lasso, and a tap clears it. While a
+// selection exists, Copy copies the rectangle around the outline. The
+// selection belongs to this device and is not synced; the moves are.
+//
+// `selection` is { lasso, strokeIds, itemIds }. `selecting` is either
+// { kind: 'draw' } while the outline is drawn, or { kind: 'move', last,
+// dx, dy } while a selection is dragged.
 function startSelect(point) {
-  selecting = { anchor: point };
-  setSelection(rectFrom(point, point));
+  if (selection && insideLasso(selection.lasso, point[0], point[1])) {
+    selecting = { kind: 'move', pageId: current.pageId, last: point, dx: 0, dy: 0 };
+    return;
+  }
+  selecting = { kind: 'draw' };
+  setSelection({ lasso: [point.slice(0, 2)], strokeIds: [], itemIds: [] }, { closed: false });
 }
 
 function extendSelect(points) {
-  setSelection(rectFrom(selecting.anchor, points.at(-1)));
+  if (selecting.kind === 'draw') {
+    selection.lasso.push(...points.map((p) => p.slice(0, 2)));
+    return board.setSelection(selection.lasso, { closed: false });
+  }
+  const point = points.at(-1);
+  const dx = point[0] - selecting.last[0];
+  const dy = point[1] - selecting.last[1];
+  const { strokeIds, itemIds } = selection;
+  if (!commit({ type: 'page.move', pageId: selecting.pageId, strokeIds, itemIds, dx, dy })) return;
+  selecting.last = point;
+  selecting.dx += dx;
+  selecting.dy += dy;
+  for (const p of selection.lasso) {
+    p[0] += dx;
+    p[1] += dy;
+  }
+  board.setSelection(selection.lasso);
 }
 
 function endSelect() {
+  const done = selecting;
   selecting = null;
-  if (selection && (selection.width < 4 || selection.height < 4)) setSelection(null);
+  if (done.kind === 'move') {
+    if (done.dx || done.dy) {
+      const { strokeIds, itemIds } = selection;
+      pushHistory(done.pageId, { kind: 'move', strokeIds, itemIds, dx: done.dx, dy: done.dy });
+    }
+    return;
+  }
+  const bounds = lassoBounds(selection.lasso);
+  if (bounds.width < 4 || bounds.height < 4) return setSelection(null);
+  setSelection({ lasso: selection.lasso, ...lassoContents(space.pages[current.pageId], selection.lasso) });
 }
 
-function rectFrom(a, b) {
-  const x0 = Math.max(0, Math.min(a[0], b[0]));
-  const y0 = Math.max(0, Math.min(a[1], b[1]));
-  const x1 = Math.min(PAGE.width, Math.max(a[0], b[0]));
-  const y1 = Math.min(PAGE.height, Math.max(a[1], b[1]));
-  return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+function setSelection(next, { closed = true } = {}) {
+  selection = next;
+  board.setSelection(next?.lasso ?? null, { closed });
+  if (!next) board.setOverSelection(false);
 }
 
-function setSelection(rect) {
-  selection = rect;
-  board.setSelection(rect);
+// The region Copy renders for a selection: the rectangle around the
+// outline, with room for line width, kept on the page.
+function selectionRegion() {
+  const b = lassoBounds(selection.lasso);
+  const pad = 8;
+  const x0 = Math.max(0, b.x - pad);
+  const y0 = Math.max(0, b.y - pad);
+  const x1 = Math.min(PAGE.width, b.x + b.width + pad);
+  const y1 = Math.min(PAGE.height, b.y + b.height + pad);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+function hover(point) {
+  board.setOverSelection(tool.mode === 'select' && !!selection && insideLasso(selection.lasso, point[0], point[1]));
 }
 
 // The eraser cuts away the ink inside a small circle and leaves the rest of
@@ -820,6 +870,9 @@ function undo() {
     const step = steps.pop();
     if (step.kind === 'draw') {
       if (commit({ type: 'stroke.remove', pageId, strokeId: step.strokeId })) return;
+    } else if (step.kind === 'move') {
+      const { strokeIds, itemIds, dx, dy } = step;
+      if (commit({ type: 'page.move', pageId, strokeIds, itemIds, dx: -dx, dy: -dy })) return setSelection(null);
     } else if (step.kind === 'item') {
       if (commit({ type: 'item.remove', pageId, itemId: step.itemId })) return;
     } else {
@@ -846,7 +899,8 @@ async function copyPage() {
   if (!page) return;
   // A selected region renders at twice page resolution, so a small region
   // still pastes as a usable image.
-  const canvas = selection ? renderPage(page, 2, selection) : renderPage(page, 1);
+  const region = selection && selectionRegion();
+  const canvas = region ? renderPage(page, 2, region) : renderPage(page, 1);
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   const [computer, here] = await Promise.all([copyToComputer(blob), copyHere(blob)]);
   if (computer.ok) return toast("Page copied to the computer's clipboard.");
@@ -959,7 +1013,7 @@ function addItem({ height, ...fields }) {
     x: view.x + (view.width - fields.width) / 2,
     y: view.y + Math.max(0, (view.height - height) / 2),
   };
-  if (item.kind === 'image') item.height = height;
+  item.height = height;
   // A paste onto the same spot as an earlier item steps down and right, so
   // pasting twice shows two items, not one on top of the other.
   const page = space.pages[current.pageId];

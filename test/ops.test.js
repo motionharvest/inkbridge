@@ -99,3 +99,20 @@ test('pages saved before pasting existed accept items', () => {
   assert.ok(applyOp(space, { type: 'item.add', pageId, item: text }));
   assert.equal(space.pages[pageId].items.length, 1);
 });
+
+test('page.move shifts the chosen strokes and items only', () => {
+  const { space, pageId } = spaceWithNotebook();
+  const moved = { id: newId(), color: '#ffffff', width: 4, points: [[10, 10, 0.5], [20, 20, 0.5]] };
+  const kept = { id: newId(), color: '#ffffff', width: 4, points: [[50, 50, 0.5]] };
+  applyOp(space, { type: 'stroke.start', pageId, stroke: moved });
+  applyOp(space, { type: 'stroke.start', pageId, stroke: kept });
+  const item = { id: newId(), kind: 'text', text: 'hi', x: 100, y: 100, width: 40, height: 30 };
+  applyOp(space, { type: 'item.add', pageId, item });
+  assert.ok(applyOp(space, { type: 'page.move', pageId, strokeIds: [moved.id], itemIds: [item.id], dx: 5, dy: -3 }));
+  const page = space.pages[pageId];
+  assert.deepEqual(page.strokes[0].points.map((p) => p.slice(0, 2)), [[15, 7], [25, 17]]);
+  assert.deepEqual(page.strokes[1].points[0].slice(0, 2), [50, 50]);
+  assert.deepEqual([page.items[0].x, page.items[0].y], [105, 97]);
+  assert.equal(applyOp(space, { type: 'page.move', pageId, strokeIds: [], itemIds: [], dx: 5, dy: 0 }), false);
+  assert.equal(applyOp(space, { type: 'page.move', pageId, strokeIds: [moved.id], dx: 0, dy: 0 }), false);
+});

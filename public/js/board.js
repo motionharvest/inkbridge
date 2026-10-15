@@ -26,14 +26,14 @@ const DOUBLE_TAP_MS = 400; // longest gap between the two taps of a double tap
 // that place the page inside the stage; every draw call goes through it,
 // so zooming redraws sharp ink instead of stretching pixels.
 export class Board {
-  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap }) {
+  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover }) {
     this.stage = stage;
     this.sheet = stage.querySelector('.sheet');
     this.paperCanvas = stage.querySelector('.paper');
     this.inkCanvas = stage.querySelector('.ink');
     this.paperCtx = this.paperCanvas.getContext('2d');
     this.inkCtx = this.inkCanvas.getContext('2d');
-    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap };
+    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover };
     this.page = null;
     this.fit = 1; // scale that fits the whole page in the stage
     this.zoom = 1;
@@ -49,10 +49,11 @@ export class Board {
     this.pull = createPullIndicator();
     stage.append(this.pull);
     this.selection = null;
-    this.selectionBox = document.createElement('div');
-    this.selectionBox.className = 'selection';
-    this.selectionBox.hidden = true;
-    stage.append(this.selectionBox);
+    this.selectionSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    this.selectionSvg.setAttribute('class', 'selection');
+    this.selectionSvg.innerHTML = '<path />';
+    this.selectionSvg.hidden = true;
+    stage.append(this.selectionSvg);
     this.ring = document.createElement('div');
     this.ring.className = 'eraser-ring';
     this.ring.hidden = true;
@@ -143,25 +144,29 @@ export class Board {
     this.stage.classList.toggle('selecting', on);
   }
 
-  // Shows a rectangle, in page units, over the page. Null hides it. The box
-  // is placed again on every redraw, so it stays on its region through zoom.
-  setSelection(rect) {
-    this.selection = rect;
+  // Shows a lasso outline, a list of [x, y] points in page units, over the
+  // page. `closed` joins the last point to the first. Null hides it. The
+  // outline is placed again on every redraw, so it stays put through zoom.
+  setSelection(lasso, { closed = true } = {}) {
+    this.selection = lasso;
+    this.selectionClosed = closed;
     this.placeSelection();
   }
 
   placeSelection() {
-    const rect = this.selection;
-    this.selectionBox.hidden = !rect;
-    if (!rect) return;
+    const lasso = this.selection;
+    this.selectionSvg.hidden = !lasso?.length;
+    if (!lasso?.length) return;
     const s = this.scale;
     const o = this.origin();
-    Object.assign(this.selectionBox.style, {
-      left: `${o.x + rect.x * s}px`,
-      top: `${o.y + rect.y * s}px`,
-      width: `${rect.width * s}px`,
-      height: `${rect.height * s}px`,
-    });
+    const d = lasso.map(([x, y], i) => `${i ? 'L' : 'M'}${(o.x + x * s).toFixed(1)} ${(o.y + y * s).toFixed(1)}`).join('');
+    this.selectionSvg.firstChild.setAttribute('d', this.selectionClosed ? `${d}Z` : d);
+    this.selectionSvg.classList.toggle('open', !this.selectionClosed);
+  }
+
+  // The cursor shows a move arrow over a finished selection.
+  setOverSelection(over) {
+    this.stage.classList.toggle('over-selection', over);
   }
 
   showRing(e) {
@@ -355,7 +360,8 @@ export class Board {
       this.callbacks.onStrokeExtend(points);
       return;
     }
-    if (this.touches.has(e.pointerId)) this.touchMove(e);
+    if (this.touches.has(e.pointerId)) return this.touchMove(e);
+    if (e.pointerType !== 'touch' && this.page) this.callbacks.onHover?.(this.toPage(e));
   }
 
   up(e, cancelled = false) {

@@ -144,6 +144,34 @@ const handlers = {
     page.items = page.items.filter((i) => i.id !== itemId);
   },
 
+  // Moves strokes and items by the same offset. The lasso uses it while a
+  // selection is dragged, and undo uses it to move them back.
+  'page.move'(space, { pageId, strokeIds = [], itemIds = [], dx, dy }) {
+    const page = space.pages[pageId];
+    if (!page || !Array.isArray(strokeIds) || !Array.isArray(itemIds)) return false;
+    dx = clamp(Number(dx), -PAGE.width * 2, PAGE.width * 2);
+    dy = clamp(Number(dy), -PAGE.height * 2, PAGE.height * 2);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!dx && !dy)) return false;
+    const strokes = new Set(strokeIds);
+    const items = new Set(itemIds);
+    let moved = false;
+    for (const stroke of page.strokes) {
+      if (!strokes.has(stroke.id)) continue;
+      for (const p of stroke.points) {
+        p[0] += dx;
+        p[1] += dy;
+      }
+      moved = true;
+    }
+    for (const item of pageItems(page)) {
+      if (!items.has(item.id)) continue;
+      item.x = clamp(item.x + dx, -PAGE.width, PAGE.width * 2);
+      item.y = clamp(item.y + dy, -PAGE.height, PAGE.height * 2);
+      moved = true;
+    }
+    if (!moved) return false;
+  },
+
   'stroke.extend'(space, { pageId, strokeId, points }) {
     const page = space.pages[pageId];
     const stroke = page && findStroke(page, strokeId);
@@ -176,8 +204,8 @@ function cleanStroke(page, stroke) {
 }
 
 // An item is an image { kind: 'image', asset, x, y, width, height } or a
-// text block { kind: 'text', text, x, y, width, size, color }, in page units.
-// Text wraps to `width`.
+// text block { kind: 'text', text, x, y, width, height, size, color }, in page
+// units. Text wraps to `width`; `height` is the wrapped height when pasted.
 function cleanItem(item) {
   if (!isId(item?.id)) return null;
   const x = clamp(Number(item.x) || 0, -PAGE.width, PAGE.width * 2);
@@ -196,6 +224,7 @@ function cleanItem(item) {
       y,
       width,
       size: clamp(Number(item.size) || 28, 8, 200),
+      height: clamp(Number(item.height) || 28, 1, PAGE.height * 2),
       color: isColor(item.color) ? item.color : '#ffffff',
     };
   }
