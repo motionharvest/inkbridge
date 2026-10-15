@@ -8,12 +8,15 @@ const SLIDE_MS = 180;
 const PAD = 12;
 const MAX_ZOOM = 6;
 const PAN_MARGIN = 60; // px of empty stage allowed past a zoomed page edge
+const TAP_MS = 300;
+const TAP_SLOP = 12; // px a finger may move and still count as a tap
 
 // The board shows one page and turns pointer input into strokes, swipes,
 // and zoom. A pen or a mouse draws. Fingers never draw, so a palm never
 // leaves ink while the Pencil is in use:
 //   one finger swipes between pages, or pans when the page is zoomed in;
-//   two fingers pinch to zoom and move the page.
+//   two fingers pinch to zoom and move the page;
+//   a quick tap with two fingers, with no movement, undoes.
 // On a computer, Ctrl with the scroll wheel or a trackpad pinch zooms, and
 // scrolling pans a zoomed page.
 //
@@ -21,14 +24,14 @@ const PAN_MARGIN = 60; // px of empty stage allowed past a zoomed page edge
 // that place the page inside the stage; every draw call goes through it,
 // so zooming redraws sharp ink instead of stretching pixels.
 export class Board {
-  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe }) {
+  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerTap }) {
     this.stage = stage;
     this.sheet = stage.querySelector('.sheet');
     this.paperCanvas = stage.querySelector('.paper');
     this.inkCanvas = stage.querySelector('.ink');
     this.paperCtx = this.paperCanvas.getContext('2d');
     this.inkCtx = this.inkCanvas.getContext('2d');
-    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe };
+    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerTap };
     this.page = null;
     this.fit = 1; // scale that fits the whole page in the stage
     this.zoom = 1;
@@ -305,7 +308,14 @@ export class Board {
       if (this.gesture?.kind === 'swipe') this.snapBack();
       const [a, b] = [...this.touches.values()];
       const at = midpoint(a, b);
-      this.gesture = { kind: 'pinch', distance: distance(a, b), from: { zoom: this.zoom, origin: this.origin(), at } };
+      this.gesture = {
+        kind: 'pinch',
+        distance: distance(a, b),
+        from: { zoom: this.zoom, origin: this.origin(), at, pan: { ...this.pan } },
+        starts: new Map(this.touches),
+        t: performance.now(),
+        moved: false,
+      };
     }
   }
 
@@ -321,6 +331,8 @@ export class Board {
       this.panBy(point.x - g.last.x, point.y - g.last.y);
       g.last = point;
     } else if (g?.kind === 'pinch' && this.touches.size >= 2) {
+      const start = g.starts.get(e.pointerId);
+      if (start && distance(start, point) > TAP_SLOP) g.moved = true;
       const [a, b] = [...this.touches.values()];
       this.zoomAt(g.from.zoom * (distance(a, b) / g.distance), midpoint(a, b), g.from);
     }
@@ -339,6 +351,17 @@ export class Board {
       return;
     }
     if (g?.kind === 'pinch') {
+      // Two fingers that lift quickly without moving are a tap. The view
+      // returns to where it was, since any zoom was only finger jitter.
+      if (!cancelled && !g.moved && performance.now() - g.t < TAP_MS) {
+        this.zoom = g.from.zoom;
+        this.pan = { ...g.from.pan };
+        this.scheduleRedraw();
+        this.gesture = { kind: 'done' };
+        if (!this.touches.size) this.gesture = null;
+        this.callbacks.onTwoFingerTap?.();
+        return;
+      }
       // A zoom that ends close to the whole page settles on the whole page.
       if (this.zoom < 1.08) {
         this.resetView();
