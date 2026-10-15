@@ -19,17 +19,10 @@ const SIZES = {
 const DEFAULT_COLORS = ['#f4f1ea', '#ffd166', '#ff6b8b', '#6ee7b7', '#7cc4ff'];
 const NEW_COLORS = ['#c4a7ff', '#ff8a5c', '#a9a6b0', '#5eead4', '#f9a8d4', '#fde68a'];
 const MAX_COLORS = 12;
-const PAPERS = [
-  { name: 'Plum night', color: '#231f29', dots: '#9b99a1' },
-  { name: 'Graphite', color: '#1d1e21', dots: '#7d7f85' },
-  { name: 'Ink blue', color: '#1a2030', dots: '#7f8aa3' },
-  { name: 'Paper', color: '#f6f3ec', dots: '#b9b4aa' },
-];
 
 const KEY = {
   code: 'inkbridge.code',
   tool: 'inkbridge.tools',
-  paper: 'inkbridge.paper',
   lastPages: 'inkbridge.lastPages',
 };
 
@@ -59,8 +52,6 @@ const els = {
   sizeSlider: $('#size-slider'),
   undo: $('#undo'),
   stage: $('#stage'),
-  paperButton: $('#paper-button'),
-  paperMenu: $('#paper-menu'),
   copy: $('#copy'),
   paste: $('#paste'),
   prev: $('#prev'),
@@ -300,7 +291,7 @@ function createNotebook() {
   const title = prompt('Notebook name', `Notebook ${space.notebooks.length + 1}`);
   if (title === null) return;
   const notebook = { id: newId(), title, createdAt: Date.now() };
-  const page = { id: newId(), paper: readJson(KEY.paper) ?? DEFAULT_PAPER };
+  const page = { id: newId(), paper: DEFAULT_PAPER };
   if (commit({ type: 'notebook.create', notebook, page })) openPage(notebook.id, page.id, { animate: false });
 }
 
@@ -629,7 +620,6 @@ function chooseTool(mode) {
 
 function toggleSizeMenu(anchor) {
   if (!els.sizeMenu.hidden) return (els.sizeMenu.hidden = true);
-  els.paperMenu.hidden = true;
   const rect = anchor.getBoundingClientRect();
   els.sizeMenu.style.left = `${Math.min(rect.left + rect.width / 2, window.innerWidth - 132)}px`;
   els.sizeMenu.style.top = `${rect.bottom + 10}px`;
@@ -669,31 +659,6 @@ function loadTool() {
     colors,
     colorSlot: Number.isInteger(saved.colorSlot) && saved.colorSlot < colors.length ? saved.colorSlot : 0,
   };
-}
-
-function renderPaperMenu() {
-  const page = space.pages[current.pageId];
-  els.paperMenu.replaceChildren(
-    ...PAPERS.map((paper) => {
-      const button = document.createElement('button');
-      button.className = 'paper-option';
-      const active = page.paper.color === paper.color && page.paper.dots === paper.dots;
-      button.classList.toggle('active', active);
-      const preview = document.createElement('span');
-      preview.className = 'paper-preview';
-      preview.style.background = `radial-gradient(${paper.dots} 1px, transparent 1.5px) 0 0 / 8px 8px, ${paper.color}`;
-      const label = document.createElement('span');
-      label.textContent = paper.name;
-      button.append(preview, label);
-      button.onclick = () => {
-        const chosen = { color: paper.color, dots: paper.dots };
-        localStorage.setItem(KEY.paper, JSON.stringify(chosen));
-        commit({ type: 'page.paper', pageId: current.pageId, paper: chosen });
-        els.paperMenu.hidden = true;
-      };
-      return button;
-    }),
-  );
 }
 
 // --- Drawing ---------------------------------------------------------------
@@ -1038,7 +1003,10 @@ function setStatus() {
   const online = socket.connected;
   els.status.classList.toggle('online', online);
   const text = online ? `${peers} ${peers === 1 ? 'device' : 'devices'}` : 'Offline';
-  els.status.textContent = text;
+  // The toolbar shows only the colored dot, to save room on a small
+  // screen. The count is in its tooltip and on the notebook list.
+  els.status.title = text;
+  els.status.setAttribute('aria-label', text);
   els.peers.textContent = text;
 }
 
@@ -1092,21 +1060,12 @@ els.title.onclick = () => {
   const title = prompt('Rename notebook', notebook.title);
   if (title !== null) commit({ type: 'notebook.rename', id: notebook.id, title });
 };
-els.paperButton.onclick = (e) => {
-  e.stopPropagation();
-  renderPaperMenu();
-  els.paperMenu.hidden = !els.paperMenu.hidden;
-};
-// A tap outside an open menu closes it. A tap on the page that closes a
-// menu does not also draw.
+// A tap outside the size menu closes it. A tap on the page that closes
+// the menu does not also draw.
 document.addEventListener(
   'pointerdown',
   (e) => {
     let closed = false;
-    if (!els.paperMenu.hidden && !els.paperMenu.contains(e.target) && !els.paperButton.contains(e.target)) {
-      els.paperMenu.hidden = true;
-      closed = true;
-    }
     const onSizeControl = [els.sizeMenu, els.sizeSlots].some((el) => el.contains(e.target));
     if (!els.sizeMenu.hidden && !onSizeControl) {
       els.sizeMenu.hidden = true;

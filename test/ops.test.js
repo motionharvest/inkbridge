@@ -49,7 +49,7 @@ test('invalid input is rejected or cleaned', () => {
   assert.equal(applyOp(space, null), false);
   assert.equal(applyOp(space, { type: 'page.create', notebookId, page: { id: '../etc' } }), false);
   applyOp(space, { type: 'page.paper', pageId, paper: { color: 'red', dots: '#123456' } });
-  assert.deepEqual(space.pages[pageId].paper, { color: '#231f29', dots: '#123456' });
+  assert.deepEqual(space.pages[pageId].paper, { color: '#1d1e21', dots: '#123456' });
 });
 
 test('deleting a notebook deletes its pages', () => {

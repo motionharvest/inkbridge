@@ -9,7 +9,8 @@
 export const PAGE = { width: 1600, height: 1120 };
 export const GRID = 32;
 
-export const DEFAULT_PAPER = { color: '#231f29', dots: '#9b99a1' };
+// Graphite: a near-black gray with a mid-gray dot grid.
+export const DEFAULT_PAPER = { color: '#1d1e21', dots: '#7d7f85' };
 
 const MAX_POINTS_PER_STROKE = 20000;
 const MAX_TITLE = 80;

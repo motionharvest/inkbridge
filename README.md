@@ -16,9 +16,9 @@ A tap on the page number in the bottom left corner opens the page grid, a previe
 
 On the last page, a swipe to the left pulls against resistance, and a New page indicator slides in from the right edge. Its ring fills as the finger travels. When the ring closes, the indicator fills with color. Lifting the finger then adds a new page with the same paper as the page before it. Lifting the finger before the ring closes springs the page back and adds nothing.
 
-Each page has paper, ink, and a fixed size of 1600 by 1120 units. The default paper is a very dark, desaturated purple (`#231f29`) with a light-medium gray dot grid (`#9b99a1`). The Paper menu offers three other papers, and the paper you choose last becomes the paper for new notebooks.
+Each page has paper, ink, and a fixed size of 1600 by 1120 units. New notebooks use Graphite paper: a near-black gray (`#1d1e21`) with a mid-gray dot grid (`#7d7f85`). A new page takes the paper of the page before it, so pages made before Graphite became the only paper keep their older paper.
 
-The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are the color slots, a plus button, three size slots, the Pen, the Eraser, and the Lasso. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
+The toolbar fits on one line on a small iPad in landscape. Its left side holds icon buttons: back to the notebook list, the notebook name, Undo, Copy, and Paste, then a dot that is green while the device is online. The toolbar keeps the drawing controls at its right edge, where a right hand reaches them. From left to right they are the color slots, a plus button, three size slots, the Pen, the Eraser, and the Lasso. The page number and the previous and next page arrows sit in the bottom left corner of the page area.
 
 A slot holds one value and keeps it, so the toolbar becomes your own palette. A tap on a slot selects it.
 
