@@ -434,6 +434,8 @@ button.icon {
 }
 
 .selection-menu {
+  display: grid;
+  gap: 2px;
   position: fixed;
   z-index: 10;
   padding: 6px;
@@ -448,8 +450,13 @@ button.icon {
   padding: 0 16px;
   background: transparent;
   border-color: transparent;
-  color: #ff8a8a;
+  color: var(--text);
+  text-align: left;
   white-space: nowrap;
+}
+
+.selection-menu button.danger {
+  color: #ff8a8a;
 }
 
 .size-menu {

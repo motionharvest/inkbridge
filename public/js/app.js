@@ -56,6 +56,7 @@ const els = {
   copy: $('#copy'),
   paste: $('#paste'),
   selectionMenu: $('#selection-menu'),
+  copySelection: $('#copy-selection'),
   removeSelection: $('#remove-selection'),
   prev: $('#prev'),
   next: $('#next'),
@@ -823,8 +824,9 @@ function selectionRegion() {
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
-// A long press inside a selection opens a menu with Remove selection.
-// Remove takes effect at once, with no confirmation; Undo brings it back.
+// A long press inside a selection opens a menu with Copy and Remove
+// selection. Remove takes effect at once, with no confirmation; Undo brings
+// it back.
 function longPress(point, at) {
   if (tool.mode !== 'select' || !selection || !insideLasso(selection.lasso, point[0], point[1])) return false;
   if (selecting?.kind === 'move') endSelect();
@@ -1133,6 +1135,12 @@ els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider
 els.copy.onclick = copyPage;
 els.paste.onclick = pasteFromComputer;
 els.removeSelection.onclick = removeSelection;
+// Copy in the selection menu does what the toolbar's Copy does: with the
+// selection still in place, it copies the area around the loop.
+els.copySelection.onclick = () => {
+  els.selectionMenu.hidden = true;
+  copyPage();
+};
 document.addEventListener('paste', pasteEvent);
 els.prev.onclick = () => go(-1);
 els.pageNumber.onclick = () => {
