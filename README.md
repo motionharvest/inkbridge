@@ -6,7 +6,7 @@ The project exists to make one path fast: sketch on the iPad with the Pencil, th
 
 ![An Inkbridge page with a hand-drawn website wireframe on dark dotted paper](docs/images/page.png)
 
-The project page, with screenshots and a short guide, is at https://motionharvest.com/inkbridge/.
+The project page, with screenshots and a short guide, is at https://motionharvest.github.io/inkbridge/.
 
 ## What it does
 
