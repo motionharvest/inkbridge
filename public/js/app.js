@@ -2,6 +2,7 @@ import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
 import { cutStrokes } from './erase.js';
 import { insideLasso, lassoBounds, lassoContents } from './lasso.js';
+import { createSmoother } from './smooth.js';
 import { loadImage, measureText, onImageLoad, renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
 
@@ -696,18 +697,25 @@ function startStroke(point) {
   if (tool.mode === 'erase') return startErase(point);
   if (tool.mode === 'select') return startSelect(point);
   const stroke = { id: newId(), color: penColor(), width: penSize(), points: [point] };
-  live = { pageId: current.pageId, strokeId: stroke.id, unsent: [] };
+  live = { pageId: current.pageId, strokeId: stroke.id, unsent: [], smoother: createSmoother(point) };
   if (commit({ type: 'stroke.start', pageId: current.pageId, stroke })) {
     pushHistory(current.pageId, { kind: 'draw', strokeId: stroke.id });
   }
 }
 
-// New points draw at once on this device and go to the others once per
-// animation frame, so a fast Pencil does not send one message per sample.
-function extendStroke(points) {
-  if (erasing) return extendErase(points);
-  if (selecting) return extendSelect(points);
+// New points are smoothed first; see smooth.js. They draw at once on this
+// device and go to the others once per animation frame, so a fast Pencil
+// does not send one message per sample. The smoothed points are what every
+// device stores, so the line looks the same everywhere.
+function extendStroke(raw) {
+  if (erasing) return extendErase(raw);
+  if (selecting) return extendSelect(raw);
   if (!live) return;
+  addPoints(raw.map((p) => live.smoother.push(p)).filter(Boolean));
+}
+
+function addPoints(points) {
+  if (!points.length) return;
   const op = { type: 'stroke.extend', pageId: live.pageId, strokeId: live.strokeId, points };
   if (!applyOp(space, op)) return;
   afterOp(op);
@@ -724,6 +732,10 @@ function flushStroke() {
 function endStroke() {
   if (erasing) return endErase();
   if (selecting) return endSelect();
+  if (live) {
+    const last = live.smoother.end();
+    if (last) addPoints([last]);
+  }
   flushStroke();
   live = null;
 }
