@@ -67,6 +67,12 @@
       th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
       th { color: var(--muted); font-weight: 600; }
       .note { color: var(--muted); font-size: 15px; }
+      .prompt { position: relative; margin: 16px 0 8px; }
+      .prompt pre {
+        white-space: pre-wrap; font: 15px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+        padding: 18px 18px 18px; padding-top: 60px;
+      }
+      .copy-prompt { position: absolute; top: 12px; right: 12px; cursor: pointer; font: inherit; font-weight: 600; }
       footer { text-align: center; color: var(--muted); font-size: 14px; padding: 32px 0 48px; border-top: 1px solid var(--line); }
     </style>
   </head>
@@ -100,6 +106,24 @@
       </p>
 
       <h2 id="get-started">Get started</h2>
+      <p>
+        Copy this prompt into a coding agent on your computer, such as Claude Code. The agent
+        installs Inkbridge, checks it, starts it, and tells you which address to open on your iPad.
+      </p>
+      <div class="prompt">
+        <button class="button primary copy-prompt" type="button">Copy prompt</button>
+        <pre id="agent-prompt">Set up Inkbridge on this computer for me. Inkbridge is a sketchpad server from https://github.com/motionharvest/inkbridge that lets my iPad and this computer share drawings, and puts copied drawings on this computer&#x27;s clipboard.
+
+1. Check that Node.js 20 or later is installed. If it is not, tell me, and install the current LTS version once I agree.
+2. Clone https://github.com/motionharvest/inkbridge.git into ~/inkbridge, unless I name another folder.
+3. In that folder, run npm install, then npm test. Confirm that every test passes.
+4. Read the README, especially &quot;How Copy works&quot;. Check that the clipboard tool it names for this operating system is installed. Tell me what is missing before you install anything.
+5. On Linux, ask me whether Inkbridge should start with the computer. If yes, run npm run install-service. If no, or on another system, run npm start and leave it running.
+6. Tell me the address to open on this computer and the address to open on my iPad. The server prints both when it starts. The iPad must be on the same network.
+7. In a few sentences, tell me how to pair the iPad with this computer and how to copy a drawing.</pre>
+      </div>
+
+      <h3>Or set it up by hand</h3>
       <p>Inkbridge needs Node.js 20 or later on the computer. The iPad needs only Safari.</p>
       <pre><code>git clone https://github.com/motionharvest/inkbridge.git
 cd inkbridge
@@ -236,5 +260,21 @@ npm start</code></pre>
     <footer>
       Inkbridge · <a href="https://github.com/motionharvest/inkbridge">github.com/motionharvest/inkbridge</a>
     </footer>
+    <script>
+      // Copies the setup prompt. The button says Copied for a moment, so a
+      // tap has a visible result.
+      const button = document.querySelector('.copy-prompt');
+      button.addEventListener('click', async () => {
+        const text = document.getElementById('agent-prompt').textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = 'Copied';
+        } catch {
+          getSelection().selectAllChildren(document.getElementById('agent-prompt'));
+          button.textContent = 'Press Ctrl+C';
+        }
+        setTimeout(() => (button.textContent = 'Copy prompt'), 1800);
+      });
+    </script>
   </body>
 </html>

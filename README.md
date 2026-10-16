@@ -42,7 +42,21 @@ Paste puts an image or a block of text on the page. A pasted item sits under the
 
 ## Run it
 
-Inkbridge needs Node.js 20 or later.
+The quickest setup is to give this prompt to a coding agent on your computer, such as Claude Code. The agent installs Inkbridge, checks it, starts it, and tells you which address to open on your iPad.
+
+```text
+Set up Inkbridge on this computer for me. Inkbridge is a sketchpad server from https://github.com/motionharvest/inkbridge that lets my iPad and this computer share drawings, and puts copied drawings on this computer's clipboard.
+
+1. Check that Node.js 20 or later is installed. If it is not, tell me, and install the current LTS version once I agree.
+2. Clone https://github.com/motionharvest/inkbridge.git into ~/inkbridge, unless I name another folder.
+3. In that folder, run npm install, then npm test. Confirm that every test passes.
+4. Read the README, especially "How Copy works". Check that the clipboard tool it names for this operating system is installed. Tell me what is missing before you install anything.
+5. On Linux, ask me whether Inkbridge should start with the computer. If yes, run npm run install-service. If no, or on another system, run npm start and leave it running.
+6. Tell me the address to open on this computer and the address to open on my iPad. The server prints both when it starts. The iPad must be on the same network.
+7. In a few sentences, tell me how to pair the iPad with this computer and how to copy a drawing.
+```
+
+To set it up by hand: Inkbridge needs Node.js 20 or later.
 
 ```bash
 npm install
