@@ -4,6 +4,10 @@ Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer a
 
 The project exists to make one path fast: sketch on the iPad with the Pencil, then paste that sketch on the computer.
 
+![An Inkbridge page with a hand-drawn website wireframe on dark dotted paper](docs/images/page.png)
+
+The project page, with screenshots and a short guide, is at https://motionharvest.github.io/inkbridge/.
+
 ## What it does
 
 A space holds your notebooks. Each space has a six-digit code, and every device that enters the code sees the same notebooks.

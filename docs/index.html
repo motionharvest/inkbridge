@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inkbridge — sketch on an iPad, paste on your computer</title>
+    <meta name="description" content="Inkbridge is a sketchpad that runs in the browser on an iPad and a computer at the same time. Copy on any device puts the drawing on the computer's clipboard." />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="Inkbridge" />
+    <meta property="og:description" content="Sketch on an iPad. Paste the drawing on your computer." />
+    <meta property="og:image" content="https://motionharvest.github.io/inkbridge/images/page.png" />
+    <style>
+      :root {
+        --bg: #16131b;
+        --surface: #221e29;
+        --line: #3a3443;
+        --text: #ece9f1;
+        --muted: #a29cab;
+        --accent: #c4a7ff;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 17px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main { max-width: 1040px; margin: 0 auto; padding: 0 24px 96px; }
+      header.hero { padding: 72px 0 32px; text-align: center; }
+      header.hero img.logo { width: 72px; height: 72px; }
+      h1 { font-size: 48px; line-height: 1.1; margin: 16px 0 12px; letter-spacing: -0.02em; }
+      h2 { font-size: 28px; margin: 72px 0 12px; letter-spacing: -0.01em; }
+      h3 { font-size: 19px; margin: 32px 0 6px; }
+      p { margin: 0 0 14px; }
+      .lede { font-size: 20px; color: var(--muted); max-width: 640px; margin: 0 auto 28px; }
+      a { color: var(--accent); }
+      .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+      .button {
+        display: inline-block; padding: 10px 20px; border-radius: 10px;
+        border: 1px solid var(--line); background: var(--surface); color: var(--text);
+        text-decoration: none; font-weight: 600;
+      }
+      .button.primary { background: var(--accent); color: #1b1622; border-color: var(--accent); }
+      figure { margin: 28px 0; }
+      figure img {
+        display: block; width: 100%; height: auto; border-radius: 14px;
+        border: 1px solid var(--line); box-shadow: 0 20px 50px rgb(0 0 0 / 0.45);
+      }
+      figcaption { color: var(--muted); font-size: 15px; margin-top: 10px; }
+      .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+      .pair figure { margin: 0; }
+      @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } h1 { font-size: 38px; } }
+      ol.steps { padding-left: 22px; }
+      ol.steps li { margin-bottom: 10px; }
+      code {
+        font: 15px ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: var(--surface); border: 1px solid var(--line);
+        padding: 1px 6px; border-radius: 6px;
+      }
+      pre {
+        background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+        padding: 16px 18px; overflow-x: auto; margin: 0 0 16px;
+      }
+      pre code { background: none; border: 0; padding: 0; }
+      table { width: 100%; border-collapse: collapse; margin: 12px 0 8px; font-size: 16px; }
+      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--muted); font-weight: 600; }
+      .note { color: var(--muted); font-size: 15px; }
+      footer { text-align: center; color: var(--muted); font-size: 14px; padding: 32px 0 48px; border-top: 1px solid var(--line); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <img class="logo" src="favicon.svg" alt="" />
+        <h1>Inkbridge</h1>
+        <p class="lede">
+          A sketchpad that runs in the browser on an iPad and on your computer at the same time.
+          Draw with the Pencil, and the ink appears on the computer as you draw. Press Copy, and the
+          drawing is on the computer's clipboard, ready to paste into a prompt.
+        </p>
+        <div class="buttons">
+          <a class="button primary" href="#get-started">Get started</a>
+          <a class="button" href="https://github.com/motionharvest/inkbridge">View on GitHub</a>
+        </div>
+      </header>
+
+      <figure>
+        <img src="images/page.png" width="1440" height="900" alt="An Inkbridge page with a hand-drawn website wireframe in white, blue, green, pink, and yellow ink on dark dotted paper, with the toolbar across the top." />
+        <figcaption>A page on the computer. The toolbar holds Back, Undo, Copy, and Paste on the left, and colors, line widths, Pen, Eraser, and Lasso on the right.</figcaption>
+      </figure>
+
+      <h2>Why it exists</h2>
+      <p>
+        Inkbridge makes one path fast: sketch an idea on the iPad, then paste that sketch on the
+        computer. The server runs on the computer, so Copy on the iPad reaches the computer's
+        clipboard directly. No file transfer, no cloud account, and no browser tab needs to be open
+        on the computer.
+      </p>
+
+      <h2 id="get-started">Get started</h2>
+      <p>Inkbridge needs Node.js 20 or later on the computer. The iPad needs only Safari.</p>
+      <pre><code>git clone https://github.com/motionharvest/inkbridge.git
+cd inkbridge
+npm install
+npm start</code></pre>
+      <p>
+        The server prints two kinds of address. Open the <code>localhost</code> address on the
+        computer. Open one of the "Other devices" addresses on the iPad. Both devices must be on the
+        same network.
+      </p>
+
+      <div class="pair">
+        <div>
+          <h3>Pair your devices</h3>
+          <ol class="steps">
+            <li>On the first device, choose <strong>Start a new space</strong>.</li>
+            <li>The notebook list shows a six-digit space code in its top right corner.</li>
+            <li>On the second device, type that code and choose <strong>Join</strong>.</li>
+          </ol>
+          <p>
+            Each device remembers its space and rejoins it every time the app opens. On the iPad,
+            Safari's <strong>Share → Add to Home Screen</strong> opens Inkbridge full screen, straight
+            into your space.
+          </p>
+        </div>
+        <figure>
+          <img src="images/pair.png" width="500" height="330" alt="The Inkbridge start screen with a Start a new space button and a field for a six-digit code." />
+          <figcaption>The start screen.</figcaption>
+        </figure>
+      </div>
+
+      <h3>Keep it running</h3>
+      <p>
+        On Linux, <code>npm run install-service</code> installs Inkbridge as a systemd user service,
+        so the server starts when the computer starts and restarts if it stops.
+        <code>npm run uninstall-service</code> removes it.
+      </p>
+
+      <h2>Notebooks and pages</h2>
+      <p>
+        A space holds notebooks, and a notebook holds pages. Every device follows the others: when
+        any device opens a page, goes back to the notebook list, or opens the page grid, every other
+        device does the same. The computer therefore shows what you see on the iPad without any input.
+      </p>
+      <figure>
+        <img src="images/library.png" width="1440" height="330" alt="The notebook list with three notebooks: UI ideas with three pages, Diagrams with one page, and Scratch with one page." />
+        <figcaption>The notebook list. Press and hold a cover to remove notebooks.</figcaption>
+      </figure>
+      <p>
+        Swipe a finger from right to left for the next page. On the last page, pull past the edge
+        until the New page ring closes, then lift your finger to add a page. Tap the page number in the
+        bottom left corner to see every page at once.
+      </p>
+      <figure>
+        <img src="images/grid.png" width="1440" height="310" alt="The page grid showing three page previews: the wireframe, a flow diagram, and an empty page." />
+        <figcaption>The page grid. Press and hold a page to remove pages.</figcaption>
+      </figure>
+
+      <h2>Draw, select, and move</h2>
+      <p>
+        The Apple Pencil or a mouse draws. A finger never draws, so a resting palm leaves no marks;
+        fingers swipe, pinch to zoom, and pan. Lines are smoothed as you draw. The Eraser removes only
+        the ink inside a small circle and leaves the rest of each line.
+      </p>
+      <div class="pair">
+        <figure>
+          <img src="images/lasso.png" width="1440" height="900" alt="A dashed blue lasso loop drawn around the yellow button in the wireframe." />
+          <figcaption>The Lasso selects the ink and pasted images inside a freehand loop. Drag inside the loop to move them.</figcaption>
+        </figure>
+        <figure>
+          <img src="images/remove.png" width="720" height="300" alt="A Remove selection menu above a lasso selection." />
+          <figcaption>Press and hold inside a selection to remove it. Undo brings it back.</figcaption>
+        </figure>
+      </div>
+
+      <h2>Copy and paste</h2>
+      <p>
+        <strong>Copy</strong> renders the page as a PNG and sends it to the server, which puts it on the
+        computer's clipboard. With a lasso selection, Copy copies only the area around the loop, at
+        twice page resolution and without the dot grid.
+      </p>
+      <p>
+        <strong>Paste</strong> works the other way. The Paste button puts whatever is on the computer's
+        clipboard, an image or text, onto the page, where every device sees it and you can draw over it.
+        <code>Ctrl+V</code> or <code>⌘V</code> pastes the clipboard of the device you press it on.
+      </p>
+
+      <h2>On a smaller iPad</h2>
+      <figure>
+        <img src="images/ipad.png" width="1133" height="768" alt="The same wireframe page at 1133 by 768 pixels, with the whole toolbar on one line." />
+        <figcaption>The toolbar fits on one line at 1133 pixels wide, the width of an iPad mini in landscape. This screenshot comes from a desktop browser window at that size.</figcaption>
+      </figure>
+
+      <h2>Controls</h2>
+      <table>
+        <thead><tr><th>Input</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td>Apple Pencil or mouse</td><td>Draw, erase, or lasso, depending on the tool</td></tr>
+          <tr><td>One finger, swipe</td><td>Next or previous page</td></tr>
+          <tr><td>Two fingers, pinch</td><td>Zoom, up to six times</td></tr>
+          <tr><td>Two fingers, double tap</td><td>Undo</td></tr>
+          <tr><td><code>Ctrl+C</code> / <code>⌘C</code></td><td>Copy the page, or the selection, to the computer</td></tr>
+          <tr><td><code>Ctrl+V</code> / <code>⌘V</code></td><td>Paste this device's clipboard onto the page</td></tr>
+          <tr><td><code>Ctrl+Z</code> / <code>⌘Z</code></td><td>Undo</td></tr>
+          <tr><td><code>E</code>, <code>S</code></td><td>Switch to the Eraser or the Lasso and back</td></tr>
+          <tr><td><code>←</code> <code>→</code></td><td>Previous or next page; <code>→</code> on the last page adds one</td></tr>
+        </tbody>
+      </table>
+      <p class="note">The README lists every control.</p>
+
+      <h2>Limits</h2>
+      <p>
+        The server has no authentication. Anyone on the same network who knows a space code can open
+        that space, so run it on a network you trust.
+      </p>
+      <p>
+        Copy reaches the clipboard of the computer that runs the server. The Linux path is tested on
+        X11. The macOS, Windows, and Wayland copy paths are written but not yet tested, and Paste from
+        the computer's clipboard works on Linux only.
+      </p>
+      <p>
+        Pinch zoom and the Lasso are tested in a desktop browser. They are not yet tested on an iPad.
+      </p>
+
+      <h2>How it works</h2>
+      <p>
+        Every change is a small JSON message, such as "start a stroke" or "add a page". The browser and
+        the server apply each message with the same JavaScript function, and Socket.IO relays it to the
+        other devices in the space. The server saves each space as a JSON file on the computer.
+        The <a href="https://github.com/motionharvest/inkbridge#readme">README</a> describes the design
+        in full.
+      </p>
+    </main>
+    <footer>
+      Inkbridge · <a href="https://github.com/motionharvest/inkbridge">github.com/motionharvest/inkbridge</a>
+    </footer>
+  </body>
+</html>
