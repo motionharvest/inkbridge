@@ -7,7 +7,7 @@ test('smoothing flattens a zigzag and still ends at the last raw point', () => {
   const out = [];
   for (let i = 1; i <= 20; i++) out.push(smoother.push([i * 10, i % 2 ? 6 : -6, 0.5]));
   const ys = out.filter(Boolean).slice(5).map((p) => Math.abs(p[1]));
-  assert.ok(Math.max(...ys) < 2, `zigzag stays within 2 units, got ${Math.max(...ys)}`);
+  assert.ok(Math.max(...ys) < 3, `zigzag stays within 3 units, got ${Math.max(...ys)}`);
   assert.deepEqual(smoother.end(), [200, -6, 0.5]);
 });
 

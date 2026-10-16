@@ -11,7 +11,7 @@
 // last raw point, and the line still ends exactly where the pen lifted.
 // The rendering then draws curves through the smoothed points.
 const MIN_STEP = 1.5;
-const WINDOW = 5;
+const WINDOW = 3;
 
 export function createSmoother(first) {
   const recent = [first];

@@ -101,7 +101,7 @@ Every change is an op: a small JSON message such as "start a stroke", "add these
 
 A device applies each op to its own copy of the space, then sends the op over Socket.IO. The server applies the same `applyOp` to its copy and relays the op to the other devices in the space. The browser and the server import the same file, so they cannot disagree about what an op means.
 
-Pen input is smoothed before it becomes part of a line. Samples closer than 1.5 page units to the last kept point are dropped, and each kept point becomes the average of the last five kept points, so small jitters in the hand or the sensor even out. The line still ends at the exact point where the pen lifted. Every device stores the smoothed points, so a line looks the same everywhere. While you draw, new points appear on your screen immediately. They go to the server once per animation frame, so a fast Pencil sends about sixty messages per second, not one per sample.
+Pen input is smoothed before it becomes part of a line. Samples closer than 1.5 page units to the last kept point are dropped, and each kept point becomes the average of the last three kept points, so small jitters in the hand or the sensor even out. The line still ends at the exact point where the pen lifted. Every device stores the smoothed points, so a line looks the same everywhere. While you draw, new points appear on your screen immediately. They go to the server once per animation frame, so a fast Pencil sends about sixty messages per second, not one per sample.
 
 The server keeps each space in memory and writes it to `data/<code>.json` shortly after each change. A device that joins or reconnects receives the whole space from the server.
 
