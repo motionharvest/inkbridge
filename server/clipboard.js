@@ -11,10 +11,11 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 // Puts a PNG on the clipboard of the computer that runs this server. Any
 // device in a space can send a page here, so a copy on the iPad lands on
 // the computer even when no browser tab is open there.
-export async function copyImageToClipboard(png) {
-  if (!Buffer.isBuffer(png) || !png.subarray(0, 8).equals(PNG_SIGNATURE)) {
+export async function copyImageToClipboard(input) {
+  if (!Buffer.isBuffer(input) || !input.subarray(0, 8).equals(PNG_SIGNATURE)) {
     throw new Error('The image is not a PNG.');
   }
+  const png = plainPng(input);
   switch (process.platform) {
     case 'linux':
       if (process.env.WAYLAND_DISPLAY) return run('wl-copy', ['--type', 'image/png'], png);
@@ -46,6 +47,31 @@ export async function copyImageToClipboard(png) {
     default:
       throw new Error(`Clipboard copy is not supported on ${process.platform}.`);
   }
+}
+
+// The chunks that make up the picture itself. Everything else in a PNG is
+// metadata.
+const PICTURE_CHUNKS = new Set(['IHDR', 'PLTE', 'tRNS', 'IDAT', 'IEND']);
+
+// Returns the PNG with only its picture chunks. Safari on the iPad adds an
+// eXIf chunk and an sRGB chunk to every canvas it saves, which a desktop
+// browser does not, and some paste targets handle those copies badly.
+// Keeping only the picture chunks makes every copy the same plain PNG,
+// whichever device made it. Each chunk carries its own checksum, so
+// chunks can be dropped without rewriting the others.
+export function plainPng(png) {
+  const parts = [png.subarray(0, 8)];
+  let at = 8;
+  while (at + 12 <= png.length) {
+    const length = png.readUInt32BE(at);
+    const end = at + 12 + length;
+    if (end > png.length) break;
+    const type = png.toString('latin1', at + 4, at + 8);
+    if (PICTURE_CHUNKS.has(type)) parts.push(png.subarray(at, end));
+    at = end;
+    if (type === 'IEND') break;
+  }
+  return Buffer.concat(parts);
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
