@@ -2,6 +2,7 @@ import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
 import { cutStrokes } from './erase.js';
 import { insideLasso, lassoBounds, lassoContents } from './lasso.js';
+import { createColorPicker } from './colorpicker.js';
 import { createSmoother } from './smooth.js';
 import { loadImage, measureText, onImageLoad, renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
@@ -583,8 +584,9 @@ function renderColorSlots() {
 
 // The color picker opens under the selected color slot. It shows a grid of
 // colors, five to a row; a tap on one puts it in the slot and closes the
-// picker. The last dot opens the system color picker for any other color.
-// A tap outside the picker or Esc closes it.
+// picker. The last dot, a rainbow circle, swaps the grid for the full
+// picker in colorpicker.js, for any other color. A tap outside the picker
+// or Esc closes it.
 function openColorPicker(anchor) {
   els.sizeMenu.hidden = true;
   const index = tool.colorSlot;
@@ -603,32 +605,33 @@ function openColorPicker(anchor) {
     };
     return button;
   };
-  const custom = document.createElement('label');
+  // The rainbow dot swaps the grid for the full picker, in place.
+  const custom = document.createElement('button');
+  custom.type = 'button';
   custom.className = 'dot custom';
   custom.title = 'Any color';
-  const input = document.createElement('input');
-  input.type = 'color';
-  input.value = chosen;
-  input.setAttribute('aria-label', 'Any color');
-  // While the system picker is open, a color change repaints only the
-  // swatch, once per frame, and saves when the picker settles.
-  let frame = 0;
-  input.oninput = () => {
-    tool = { ...tool, colors: tool.colors.map((c, i) => (i === index ? input.value : c)) };
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      anchor.style.background = input.value;
+  custom.setAttribute('aria-label', 'Any color');
+  custom.onclick = () => {
+    const picker = createColorPicker(penColor(), {
+      onInput: (color) => {
+        tool = { ...tool, colors: tool.colors.map((c, i) => (i === index ? color : c)) };
+        anchor.style.background = color;
+      },
+      onChange: () => saveTool(),
     });
+    els.colorPicker.classList.add('full');
+    els.colorPicker.replaceChildren(picker);
+    placeColorPicker(anchor);
   };
-  input.onchange = () => {
-    anchor.style.background = input.value;
-    saveTool();
-  };
-  custom.append(input);
+  els.colorPicker.classList.remove('full');
   els.colorPicker.replaceChildren(...PICKER_COLORS.map(dot), custom);
-
   els.colorPicker.hidden = false;
+  placeColorPicker(anchor);
+}
+
+// Puts the picker under the slot, inside the window, with its tail
+// pointing at the slot.
+function placeColorPicker(anchor) {
   const rect = anchor.getBoundingClientRect();
   const width = els.colorPicker.offsetWidth;
   const center = rect.left + rect.width / 2;
