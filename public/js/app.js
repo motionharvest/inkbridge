@@ -151,6 +151,10 @@ function loadSpace(nextSpace, view) {
   localStorage.setItem(KEY.code, space.code);
   history.replaceState(null, '', `/?space=${space.code}`);
   els.spaceCode.textContent = formatCode(space.code);
+  // A reconnect brings a fresh copy of the space. The board must draw the
+  // page from that copy; openPage skips the page already on screen, so
+  // without this the board keeps redrawing the old copy and misses changes.
+  if (current.pageId && space.pages[current.pageId]) board.setPage(space.pages[current.pageId]);
   // A device that joins or reconnects opens the view the space is on, so
   // it matches the other devices from the start.
   if (view && showView(view, { animate: false })) return;
