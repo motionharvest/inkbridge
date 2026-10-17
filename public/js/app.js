@@ -584,8 +584,8 @@ function renderColorSlots() {
 
 // The color picker opens under the selected color slot. It shows a grid of
 // colors, five to a row; a tap on one puts it in the slot and closes the
-// picker. The last dot, a rainbow circle, swaps the grid for the full
-// picker in colorpicker.js, for any other color. A tap outside the picker
+// picker. The last dot, a rainbow circle, opens the full picker in
+// colorpicker.js below the grid, for any other color. A tap outside the picker
 // or Esc closes it.
 function openColorPicker(anchor) {
   els.sizeMenu.hidden = true;
@@ -605,13 +605,21 @@ function openColorPicker(anchor) {
     };
     return button;
   };
-  // The rainbow dot swaps the grid for the full picker, in place.
+  // The rainbow dot opens the full picker below the grid, and a second tap
+  // closes it. The grid stays, so a quick color is still one tap away.
   const custom = document.createElement('button');
   custom.type = 'button';
   custom.className = 'dot custom';
   custom.title = 'Any color';
   custom.setAttribute('aria-label', 'Any color');
   custom.onclick = () => {
+    const open = els.colorPicker.querySelector('.cp');
+    custom.setAttribute('aria-pressed', String(!open));
+    els.colorPicker.classList.toggle('full', !open);
+    if (open) {
+      open.remove();
+      return placeColorPicker(anchor);
+    }
     const picker = createColorPicker(penColor(), {
       onInput: (color) => {
         tool = { ...tool, colors: tool.colors.map((c, i) => (i === index ? color : c)) };
@@ -619,12 +627,14 @@ function openColorPicker(anchor) {
       },
       onChange: () => saveTool(),
     });
-    els.colorPicker.classList.add('full');
-    els.colorPicker.replaceChildren(picker);
+    els.colorPicker.append(picker);
     placeColorPicker(anchor);
   };
+  const dots = document.createElement('div');
+  dots.className = 'cp-dots';
+  dots.append(...PICKER_COLORS.map(dot), custom);
   els.colorPicker.classList.remove('full');
-  els.colorPicker.replaceChildren(...PICKER_COLORS.map(dot), custom);
+  els.colorPicker.replaceChildren(dots);
   els.colorPicker.hidden = false;
   placeColorPicker(anchor);
 }

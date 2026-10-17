@@ -354,8 +354,7 @@ button.icon {
   position: fixed;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(5, 30px);
-  gap: 10px;
+  gap: 14px;
   padding: 14px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -417,9 +416,16 @@ button.icon {
 
 /* The full picker. The square shows the current hue, faded to white on the
    left and to black at the bottom. */
-.color-picker.full {
-  display: block;
-  padding: 12px;
+/* The quick colors, five to a row. With the full picker open below, the
+   rows stretch to the picker's width. */
+.cp-dots {
+  display: grid;
+  grid-template-columns: repeat(5, 30px);
+  gap: 10px;
+}
+
+.color-picker.full .cp-dots {
+  justify-content: space-between;
 }
 
 .cp {
