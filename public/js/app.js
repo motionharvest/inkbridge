@@ -21,9 +21,10 @@ const SIZES = {
 const DEFAULT_COLORS = ['#f4f1ea', '#ffd166', '#ff6b8b', '#6ee7b7', '#7cc4ff'];
 const NEW_COLORS = ['#c4a7ff', '#ff8a5c', '#a9a6b0', '#5eead4', '#f9a8d4', '#fde68a'];
 const MAX_COLORS = 12;
-// The colors in the color picker, five to a row. They include every
-// default slot color, and none too dark to see on Graphite paper.
-const PICKER_COLORS = [
+// The palette in the color picker, five to a row, before any change. It
+// includes every default slot color, and none too dark to see on Graphite
+// paper.
+const PALETTE = [
   '#ffffff', '#f4f1ea', '#b8b8c8', '#8a8799', '#5c596b',
   '#7a2e3a', '#ff6b8b', '#d9434a', '#f08a3c', '#ffd166',
   '#f3e6b5', '#a9784f', '#5fb85a', '#6ee7b7', '#8fd3c1',
@@ -582,57 +583,89 @@ function renderColorSlots() {
   );
 }
 
-// The color picker opens under the selected color slot. It shows a grid of
-// colors, five to a row; a tap on one puts it in the slot and closes the
-// picker. The last dot, a rainbow circle, opens the full picker in
-// colorpicker.js below the grid, for any other color. A tap outside the picker
-// or Esc closes it.
+// The color picker opens under the selected color slot. Its grid holds the
+// palette: nineteen colors, five to a row, that this device saves and that
+// each can be changed.
+//   A tap on a palette color selects it: the toolbar slot takes that color.
+//   A second tap on the selected color opens the full picker below the
+//   grid. A change there recolors both that palette color and the slot,
+//   so the palette becomes your own.
+//   The rainbow dot opens or closes the full picker for the selected color.
+// The picker stays open while you choose. A tap outside it or Esc closes it.
 function openColorPicker(anchor) {
   els.sizeMenu.hidden = true;
-  const index = tool.colorSlot;
-  const chosen = penColor();
-  const dot = (color) => {
+  const slot = tool.colorSlot;
+  let selected = tool.palette.findIndex((c) => c.toLowerCase() === penColor().toLowerCase());
+  const dots = document.createElement('div');
+  dots.className = 'cp-dots';
+  const buttons = tool.palette.map((color, i) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'dot';
-    button.title = color;
-    button.setAttribute('aria-label', color);
-    button.setAttribute('aria-pressed', String(color.toLowerCase() === chosen.toLowerCase()));
     button.style.background = color;
     button.onclick = () => {
-      setSlotColor(index, color);
-      closeColorPicker();
+      if (i === selected) return toggleFull();
+      selected = i;
+      setColor(tool.palette[i]);
+      markSelected();
+      if (full()) openFull();
     };
     return button;
-  };
-  // The rainbow dot opens the full picker below the grid, and a second tap
-  // closes it. The grid stays, so a quick color is still one tap away.
-  const custom = document.createElement('button');
-  custom.type = 'button';
-  custom.className = 'dot custom';
-  custom.title = 'Any color';
-  custom.setAttribute('aria-label', 'Any color');
-  custom.onclick = () => {
-    const open = els.colorPicker.querySelector('.cp');
-    custom.setAttribute('aria-pressed', String(!open));
-    els.colorPicker.classList.toggle('full', !open);
-    if (open) {
-      open.remove();
-      return placeColorPicker(anchor);
-    }
-    const picker = createColorPicker(penColor(), {
+  });
+  const rainbow = document.createElement('button');
+  rainbow.type = 'button';
+  rainbow.className = 'dot custom';
+  rainbow.title = 'Change the selected color';
+  rainbow.setAttribute('aria-label', 'Change the selected color');
+  rainbow.onclick = () => toggleFull();
+  dots.append(...buttons, rainbow);
+
+  function markSelected() {
+    buttons.forEach((button, i) => {
+      button.setAttribute('aria-pressed', String(i === selected));
+      button.title = i === selected ? 'Tap again to change this color' : tool.palette[i];
+      button.setAttribute('aria-label', button.title);
+    });
+  }
+
+  // Puts a color in the toolbar slot without rebuilding the toolbar, which
+  // would replace the swatch the picker points at.
+  function setColor(color, { save = true } = {}) {
+    tool = { ...tool, colors: tool.colors.map((c, i) => (i === slot ? color : c)) };
+    anchor.style.background = color;
+    if (save) saveTool();
+  }
+
+  const full = () => els.colorPicker.querySelector('.cp');
+
+  function openFull() {
+    full()?.remove();
+    const start = selected >= 0 ? tool.palette[selected] : penColor();
+    const picker = createColorPicker(start, {
       onInput: (color) => {
-        tool = { ...tool, colors: tool.colors.map((c, i) => (i === index ? color : c)) };
-        anchor.style.background = color;
+        if (selected >= 0) {
+          tool = { ...tool, palette: tool.palette.map((c, i) => (i === selected ? color : c)) };
+          buttons[selected].style.background = color;
+        }
+        setColor(color, { save: false });
       },
       onChange: () => saveTool(),
     });
+    els.colorPicker.classList.add('full');
     els.colorPicker.append(picker);
+    rainbow.setAttribute('aria-pressed', 'true');
     placeColorPicker(anchor);
-  };
-  const dots = document.createElement('div');
-  dots.className = 'cp-dots';
-  dots.append(...PICKER_COLORS.map(dot), custom);
+  }
+
+  function toggleFull() {
+    if (!full()) return openFull();
+    full().remove();
+    els.colorPicker.classList.remove('full');
+    rainbow.setAttribute('aria-pressed', 'false');
+    placeColorPicker(anchor);
+  }
+
+  markSelected();
   els.colorPicker.classList.remove('full');
   els.colorPicker.replaceChildren(dots);
   els.colorPicker.hidden = false;
@@ -651,12 +684,12 @@ function placeColorPicker(anchor) {
   els.colorPicker.style.setProperty('--tail-x', `${center - left}px`);
 }
 
+// Closing redraws the color slots, since the picker changed the selected
+// slot's color without rebuilding them.
 function closeColorPicker() {
+  if (els.colorPicker.hidden) return;
   els.colorPicker.hidden = true;
-}
-
-function setSlotColor(index, color) {
-  setTool({ colors: tool.colors.map((c, i) => (i === index ? color : c)) }, { render: 'colors' });
+  renderColorSlots();
 }
 
 function addColor() {
@@ -755,6 +788,7 @@ function loadTool() {
     erase: slotsFor('erase'),
     colors,
     colorSlot: Number.isInteger(saved.colorSlot) && saved.colorSlot < colors.length ? saved.colorSlot : 0,
+    palette: Array.isArray(saved.palette) && saved.palette.length === PALETTE.length && saved.palette.every(isHex) ? saved.palette : PALETTE,
   };
 }
 
@@ -1293,6 +1327,10 @@ function forgetSpace() {
 
 function formatCode(code) {
   return `${code.slice(0, 3)} ${code.slice(3)}`;
+}
+
+function isHex(value) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 }
 
 function readJson(key) {
