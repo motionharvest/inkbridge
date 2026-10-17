@@ -54,6 +54,15 @@ export function createColorPicker(color, { onInput, onChange }) {
       input.spellcheck = false;
       input.setAttribute('aria-label', label);
       if (max) input.maxLength = max;
+      // The fields stay read-only until a finger or a mouse taps one. iPadOS
+      // Scribble only wakes near editable fields, so the Apple Pencil never
+      // brings up handwriting input anywhere in the picker.
+      input.readOnly = true;
+      input.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'pen') return e.preventDefault();
+        input.readOnly = false;
+      });
+      input.addEventListener('blur', () => (input.readOnly = true));
       const name = el('span');
       name.textContent = label;
       box.append(input, name);
@@ -113,9 +122,8 @@ export function createColorPicker(color, { onInput, onChange }) {
   // A drag on the square or the slider follows the pointer, even outside
   // the element, until it lifts.
   function drag(element, update) {
-    // Cancelling the touch events keeps iPadOS from starting Scribble, its
-    // Apple Pencil handwriting input, which wakes for a pen that lands near
-    // the text fields below. The pointer events still arrive.
+    // Cancelling the touch events keeps iPadOS from treating a drag as a
+    // scroll or a Scribble stroke. The pointer events still arrive.
     for (const type of ['touchstart', 'touchmove']) {
       element.addEventListener(type, (e) => e.cancelable && e.preventDefault(), { passive: false });
     }
