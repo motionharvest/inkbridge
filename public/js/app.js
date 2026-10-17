@@ -20,6 +20,14 @@ const SIZES = {
 const DEFAULT_COLORS = ['#f4f1ea', '#ffd166', '#ff6b8b', '#6ee7b7', '#7cc4ff'];
 const NEW_COLORS = ['#c4a7ff', '#ff8a5c', '#a9a6b0', '#5eead4', '#f9a8d4', '#fde68a'];
 const MAX_COLORS = 12;
+// The colors in the color picker, five to a row. They include every
+// default slot color, and none too dark to see on Graphite paper.
+const PICKER_COLORS = [
+  '#ffffff', '#f4f1ea', '#b8b8c8', '#8a8799', '#5c596b',
+  '#7a2e3a', '#ff6b8b', '#d9434a', '#f08a3c', '#ffd166',
+  '#f3e6b5', '#a9784f', '#5fb85a', '#6ee7b7', '#8fd3c1',
+  '#4f8fc0', '#7cc4ff', '#9b6fd0', '#d97bb8',
+];
 
 const KEY = {
   code: 'inkbridge.code',
@@ -56,6 +64,7 @@ const els = {
   copy: $('#copy'),
   paste: $('#paste'),
   selectionMenu: $('#selection-menu'),
+  colorPicker: $('#color-picker'),
   copySelection: $('#copy-selection'),
   removeSelection: $('#remove-selection'),
   prev: $('#prev'),
@@ -546,49 +555,95 @@ function renderColorSlots() {
   const penOff = tool.mode !== 'pen';
   els.colorSlots.hidden = penOff;
   els.addColor.hidden = penOff || tool.colors.length >= MAX_COLORS;
+  if (penOff) closeColorPicker();
   els.colorSlots.replaceChildren(
     ...tool.colors.map((color, index) => {
       const slot = document.createElement('div');
       slot.className = 'slot color-slot';
       const active = index === tool.colorSlot;
       slot.classList.toggle('active', active);
-      const swatch = document.createElement(active ? 'label' : 'button');
+      const swatch = document.createElement('button');
       swatch.className = 'swatch';
       swatch.style.background = color;
       swatch.title = active ? 'Change this color' : color;
-      if (!active) {
-        swatch.onclick = () => setTool({ colorSlot: index }, { render: 'colors' });
-      } else {
+      if (active) {
         swatch.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>';
-        const picker = document.createElement('input');
-        picker.type = 'color';
-        picker.value = color;
-        picker.setAttribute('aria-label', 'Change this color');
-        // While the picker is open, each color change only repaints this
-        // swatch, once per frame. Nothing else is rebuilt, because rebuilding
-        // the toolbar under an open picker makes it stutter. The color is
-        // saved when the picker settles.
-        let frame = 0;
-        picker.oninput = () => {
-          const colors = [...tool.colors];
-          colors[index] = picker.value;
-          tool = { ...tool, colors };
-          if (frame) return;
-          frame = requestAnimationFrame(() => {
-            frame = 0;
-            swatch.style.background = picker.value;
-          });
+        swatch.onclick = () => (els.colorPicker.hidden ? openColorPicker(swatch) : closeColorPicker());
+      } else {
+        swatch.onclick = () => {
+          closeColorPicker();
+          setTool({ colorSlot: index }, { render: 'colors' });
         };
-        picker.onchange = () => {
-          swatch.style.background = picker.value;
-          saveTool();
-        };
-        swatch.append(picker);
       }
       slot.append(swatch);
       return slot;
     }),
   );
+}
+
+// The color picker opens under the selected color slot. It shows a grid of
+// colors, five to a row; a tap on one puts it in the slot and closes the
+// picker. The last dot opens the system color picker for any other color.
+// A tap outside the picker or Esc closes it.
+function openColorPicker(anchor) {
+  els.sizeMenu.hidden = true;
+  const index = tool.colorSlot;
+  const chosen = penColor();
+  const dot = (color) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'dot';
+    button.title = color;
+    button.setAttribute('aria-label', color);
+    button.setAttribute('aria-pressed', String(color.toLowerCase() === chosen.toLowerCase()));
+    button.style.background = color;
+    button.onclick = () => {
+      setSlotColor(index, color);
+      closeColorPicker();
+    };
+    return button;
+  };
+  const custom = document.createElement('label');
+  custom.className = 'dot custom';
+  custom.title = 'Any color';
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.value = chosen;
+  input.setAttribute('aria-label', 'Any color');
+  // While the system picker is open, a color change repaints only the
+  // swatch, once per frame, and saves when the picker settles.
+  let frame = 0;
+  input.oninput = () => {
+    tool = { ...tool, colors: tool.colors.map((c, i) => (i === index ? input.value : c)) };
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      anchor.style.background = input.value;
+    });
+  };
+  input.onchange = () => {
+    anchor.style.background = input.value;
+    saveTool();
+  };
+  custom.append(input);
+  els.colorPicker.replaceChildren(...PICKER_COLORS.map(dot), custom);
+
+  els.colorPicker.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const width = els.colorPicker.offsetWidth;
+  const center = rect.left + rect.width / 2;
+  const left = Math.min(Math.max(8, center - width / 2), window.innerWidth - width - 8);
+  els.colorPicker.style.left = `${left}px`;
+  els.colorPicker.style.top = `${rect.bottom + 12}px`;
+  els.colorPicker.style.setProperty('--tail-x', `${center - left}px`);
+}
+
+function closeColorPicker() {
+  els.colorPicker.hidden = true;
+}
+
+function setSlotColor(index, color) {
+  setTool({ colors: tool.colors.map((c, i) => (i === index ? color : c)) }, { render: 'colors' });
 }
 
 function addColor() {
@@ -643,6 +698,7 @@ function chooseTool(mode) {
 
 function toggleSizeMenu(anchor) {
   if (!els.sizeMenu.hidden) return (els.sizeMenu.hidden = true);
+  closeColorPicker();
   const rect = anchor.getBoundingClientRect();
   els.sizeMenu.style.left = `${Math.min(rect.left + rect.width / 2, window.innerWidth - 132)}px`;
   els.sizeMenu.style.top = `${rect.bottom + 10}px`;
@@ -1156,8 +1212,8 @@ els.title.onclick = () => {
   const title = prompt('Rename notebook', notebook.title);
   if (title !== null) commit({ type: 'notebook.rename', id: notebook.id, title });
 };
-// A tap outside the size menu closes it. A tap on the page that closes
-// the menu does not also draw.
+// A tap outside the size menu or the color picker closes it. A tap on the
+// page that closes one does not also draw.
 document.addEventListener(
   'pointerdown',
   (e) => {
@@ -1165,6 +1221,11 @@ document.addEventListener(
     const onSizeControl = [els.sizeMenu, els.sizeSlots].some((el) => el.contains(e.target));
     if (!els.sizeMenu.hidden && !onSizeControl) {
       els.sizeMenu.hidden = true;
+      closed = true;
+    }
+    const onColorControl = [els.colorPicker, els.colorSlots].some((el) => el.contains(e.target));
+    if (!els.colorPicker.hidden && !onColorControl) {
+      closeColorPicker();
       closed = true;
     }
     if (!els.selectionMenu.hidden && !els.selectionMenu.contains(e.target)) els.selectionMenu.hidden = true;
@@ -1176,6 +1237,7 @@ document.addEventListener(
 document.addEventListener('keydown', (e) => {
   if (!current.pageId && libraryEditing && e.key === 'Escape') return setLibraryEditing(false);
   if (!current.pageId || e.target.closest('input, textarea')) return;
+  if (e.key === 'Escape' && !els.colorPicker.hidden) return closeColorPicker();
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'z') return e.preventDefault(), undo();
   if (mod && e.key.toLowerCase() === 'c' && !String(getSelection())) return e.preventDefault(), copyPage();

@@ -331,16 +331,10 @@ button.icon {
   min-height: 36px;
 }
 
-/* On the selected color slot, the swatch is a label around a hidden color
-   input, so a tap anywhere on it opens the system color picker. */
 .color-slot .swatch {
   position: relative;
   display: grid;
   place-items: center;
-}
-
-.color-slot.active .swatch {
-  cursor: pointer;
 }
 
 .color-slot .chevron {
@@ -354,7 +348,74 @@ button.icon {
   filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.6));
 }
 
-.color-slot input {
+/* The color picker: a grid of color dots under the selected color slot,
+   with a tail pointing up at it. */
+.color-picker {
+  position: fixed;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(5, 30px);
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.5);
+  animation: picker-in 120ms ease-out both;
+}
+
+.color-picker[hidden] {
+  display: none;
+}
+
+.color-picker::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: calc(var(--tail-x, 30px) - 6px);
+  width: 12px;
+  height: 12px;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+
+@keyframes picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.dot {
+  position: relative;
+  width: 30px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 120ms;
+  touch-action: manipulation;
+}
+
+.dot:hover {
+  transform: scale(1.12);
+}
+
+.dot[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dot.custom {
+  overflow: hidden;
+  background: conic-gradient(#e0474c, #f5cf4a, #5fb85a, #4fa3d9, #7b4fa3, #e0474c);
+}
+
+.dot.custom input {
   position: absolute;
   inset: 0;
   width: 100%;
