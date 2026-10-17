@@ -113,6 +113,12 @@ export function createColorPicker(color, { onInput, onChange }) {
   // A drag on the square or the slider follows the pointer, even outside
   // the element, until it lifts.
   function drag(element, update) {
+    // Cancelling the touch events keeps iPadOS from starting Scribble, its
+    // Apple Pencil handwriting input, which wakes for a pen that lands near
+    // the text fields below. The pointer events still arrive.
+    for (const type of ['touchstart', 'touchmove']) {
+      element.addEventListener(type, (e) => e.cancelable && e.preventDefault(), { passive: false });
+    }
     element.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       element.setPointerCapture(e.pointerId);
