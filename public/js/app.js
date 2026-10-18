@@ -1424,3 +1424,7 @@ function readJson(key) {
 // server. The connection then replaces it with the server's copy, with the
 // waiting changes applied on top.
 if (savedHere) loadSpace(saved.space, null);
+
+// Keeps the app's own files on the device, so it opens with no server. The
+// browser allows this only on HTTPS or localhost.
+navigator.serviceWorker?.register('/sw.js');

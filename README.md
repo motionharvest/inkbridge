@@ -131,7 +131,9 @@ A change made while the server cannot be reached waits in the device's outbox. T
 
 When the device reconnects, it joins the space, and the server answers with its copy and the highest number it has applied for that device. The device drops the changes up to that number, applies the rest on top of the server's copy, and sends them. The other devices receive them as they arrive. A change that no longer applies, such as an edit to a page another device removed, is confirmed and ignored on both sides.
 
-The app itself is not kept on the device. An app that is still open when the connection drops keeps working and syncs on reconnect. An app that was closed needs the server to start.
+The app itself is kept on the device by a service worker, a script the browser runs beside the page that can answer the page's requests for files. Each time the app opens, the worker asks the server for the app's files and saves them. When the server does not answer within two and a half seconds, the worker opens the saved files, so a closed app opens with no server and the saved space appears. Pasted images the device has shown are saved the same way. An app that is still open when the connection drops keeps working whether or not the worker runs.
+
+A browser runs a service worker only for a page served over HTTPS or from `localhost`. An iPad that opens Inkbridge at a plain `http://` network address therefore cannot open a closed app offline; it keeps working offline only while the app stays open.
 
 ```
 public/
@@ -145,6 +147,7 @@ public/
   js/colorpicker.js         the full color picker and its color math
   js/local.js               this device's saved copy of the space, in IndexedDB
   js/outbox.js              numbered changes waiting for the server
+  sw.js                     the service worker that keeps the app on the device
   js/shared/ops.js          the op definitions, shared with the server
 server/
   index.js                  Express static files and Socket.IO rooms
