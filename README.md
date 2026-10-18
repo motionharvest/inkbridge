@@ -123,6 +123,16 @@ Pen input is smoothed before it becomes part of a line. Samples closer than 1.5 
 
 The server keeps each space in memory and writes it to `data/<code>.json` shortly after each change. A device that joins or reconnects receives the whole space from the server.
 
+## How offline works
+
+Each device keeps a copy of its space in IndexedDB, saved at most twice a second and whenever the page is hidden. The app starts from that copy, so the notebook list and every page show at once, and drawing, erasing, the Lasso, text paste, page and notebook changes, and Undo all work with no server.
+
+A change made while the server cannot be reached waits in the device's outbox. The outbox is saved with the space, so it survives closing the app. Each change carries a number from the device's own sequence. The server confirms a change after applying it, and the device then drops it from the outbox. The server also remembers the highest number it has applied for each device, and saves that number with the space. A device that sends a change twice because a confirmation was lost with the connection therefore has it applied once.
+
+When the device reconnects, it joins the space, and the server answers with its copy and the highest number it has applied for that device. The device drops the changes up to that number, applies the rest on top of the server's copy, and sends them. The other devices receive them as they arrive. A change that no longer applies, such as an edit to a page another device removed, is confirmed and ignored on both sides.
+
+The app itself is not kept on the device. An app that is still open when the connection drops keeps working and syncs on reconnect. An app that was closed needs the server to start.
+
 ```
 public/
   index.html, style.css     the three screens: pair, notebook list, page
@@ -133,6 +143,8 @@ public/
   js/lasso.js               what a lasso loop contains
   js/smooth.js              smooths pen input into stroke points
   js/colorpicker.js         the full color picker and its color math
+  js/local.js               this device's saved copy of the space, in IndexedDB
+  js/outbox.js              numbered changes waiting for the server
   js/shared/ops.js          the op definitions, shared with the server
 server/
   index.js                  Express static files and Socket.IO rooms
@@ -167,5 +179,7 @@ Pasting from the computer's clipboard works on Linux only. On macOS and Windows 
 A pasted item can be moved or removed with the Lasso but cannot be resized or erased. A selection cannot be resized or rotated. Removing a page or notebook leaves its pasted images in `data/assets/`.
 
 Verified for Paste on the Linux desktop in Brave: the Paste button placed the image from the computer's clipboard on the page, ink drew over it, `Ctrl+V` pasted the same image, and both items reached the server's saved space. Pasting text and pasting on the iPad are not yet tested. The Lasso is verified with the mouse on the desktop: a loop selected two images and a line, a drag moved them, the server saved the new positions, and Undo moved them back. A tap outside the loop cleared it, a long press inside opened Remove selection, Remove took both images off the page, and Undo put them back. The Lasso is not yet tested with the Pencil or a finger.
+
+A device that is offline cannot create a space, join one, copy to the computer's clipboard, paste from it, or paste an image from its own clipboard, because each of these needs the server. Images already on a page show offline only if the device has displayed them before.
 
 There is no redo and no page reordering.

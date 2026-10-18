@@ -56,15 +56,32 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
       const space = store.get(request?.code);
       if (!space) return ack?.({ ok: false, error: 'No space has that code.' });
       attach(socket, space.code);
-      ack?.({ ok: true, space, view: store.views.get(space.code) ?? null });
+      ack?.({
+        ok: true,
+        space,
+        view: store.views.get(space.code) ?? null,
+        applied: store.lastApplied(space.code, request?.client),
+      });
     });
 
-    socket.on('op', (op) => {
+    // A device numbers its changes, `meta` being { client, seq }. A change
+    // the space has already applied, sent again because its confirmation was
+    // lost with the connection, is confirmed and not applied twice. A change
+    // that does not apply, such as an edit to a page another device removed,
+    // is confirmed too, because sending it again cannot help.
+    socket.on('op', (op, meta, ack) => {
       const code = socket.data.code;
       const space = code && store.get(code);
-      if (!space || !applyOp(space, op)) return;
-      store.changed(code);
-      socket.to(code).emit('op', op);
+      if (!space) return;
+      const numbered = typeof meta?.client === 'string' && Number.isInteger(meta.seq);
+      if (!numbered || meta.seq > store.lastApplied(code, meta.client)) {
+        if (applyOp(space, op)) {
+          store.changed(code);
+          socket.to(code).emit('op', op);
+        }
+        if (numbered) store.noteApplied(code, meta.client, meta.seq);
+      }
+      if (typeof ack === 'function') ack();
     });
 
     // The view a device is showing: the notebook list or one page. Every

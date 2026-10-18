@@ -4,6 +4,8 @@ import { cutStrokes } from './erase.js';
 import { insideLasso, lassoBounds, lassoContents } from './lasso.js';
 import { createColorPicker } from './colorpicker.js';
 import { createSmoother } from './smooth.js';
+import { clearLocal, loadLocal, saveLocal } from './local.js';
+import { Outbox } from './outbox.js';
 import { loadImage, measureText, onImageLoad, renderPage } from './render.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
 
@@ -114,20 +116,85 @@ const board = new Board(els.stage, {
 const codeInAddress = new URLSearchParams(location.search).get('space');
 if (/^\d{6}$/.test(codeInAddress ?? '')) localStorage.setItem(KEY.code, codeInAddress);
 
+// The saved copy of the space and the changes the server has not confirmed.
+// Reading it before the socket exists means the first connection already
+// knows what is waiting to be sent.
+const saved = await loadLocal();
+const savedHere = saved?.space?.code === localStorage.getItem(KEY.code);
+const outbox = new Outbox(savedHere ? saved.outbox : undefined);
+
+// True from the moment the server has answered a join until the connection
+// drops. Changes made at any other time wait in the outbox.
+let synced = false;
+
 const socket = io({ auth: (cb) => cb({ code: localStorage.getItem(KEY.code) }) });
 
 socket.on('connect', () => {
   setStatus();
   const code = localStorage.getItem(KEY.code);
   if (!code) return show('pair');
-  socket.emit('space:join', { code }, (res) => {
-    if (res.ok) return loadSpace(res.space, res.view);
+  socket.emit('space:join', { code, client: outbox.client }, (res) => {
+    if (res.ok) return resync(res);
     forgetSpace();
     show('pair', res.error);
   });
 });
 
-socket.on('disconnect', () => setStatus());
+socket.on('disconnect', () => {
+  synced = false;
+  setStatus();
+});
+
+// The server's copy is the base. Changes it has already applied are dropped
+// from the outbox, the rest are applied on top of its copy, and then they are
+// sent. Nothing made offline is lost, and nothing is applied twice.
+function resync(res) {
+  outbox.confirm(res.applied ?? 0);
+  for (const { op } of outbox.queue) applyOp(res.space, op);
+  loadSpace(res.space, res.view);
+  synced = true;
+  for (const entry of outbox.queue) transmit(entry);
+}
+
+// Records a change for the server. It is sent now when the connection is up,
+// and otherwise by the next resync.
+function send(op) {
+  const entry = outbox.add(op);
+  if (synced) transmit(entry);
+  persistSoon();
+}
+
+function transmit({ seq, op }) {
+  socket.emit('op', op, { client: outbox.client, seq }, () => {
+    outbox.confirm(seq);
+    persistSoon();
+  });
+}
+
+// A view is only worth sending while the connection is up. A view held back
+// until reconnecting would pull the other devices to a place this device left
+// long ago.
+function sendView(view) {
+  socket.volatile.emit('view', view);
+}
+
+// Writes the saved copy at most twice a second, so drawing does not copy the
+// whole space on every frame. A hidden page writes at once.
+let persistTimer = null;
+let forgotten = false; // set by forgetSpace so a leaving device does not save the space again
+function persistSoon() {
+  persistTimer ??= setTimeout(persistNow, 500);
+}
+
+function persistNow() {
+  clearTimeout(persistTimer);
+  persistTimer = null;
+  if (space && !forgotten) saveLocal({ space, outbox: outbox.toJSON() });
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) persistNow();
+});
 
 socket.on('clipboard:copied', () => toast("Another device copied a page to the computer's clipboard."));
 
@@ -148,9 +215,11 @@ socket.on('view', (view) => {
 
 function loadSpace(nextSpace, view) {
   space = nextSpace;
+  forgotten = false;
   localStorage.setItem(KEY.code, space.code);
   history.replaceState(null, '', `/?space=${space.code}`);
   els.spaceCode.textContent = formatCode(space.code);
+  persistSoon();
   // A reconnect brings a fresh copy of the space. The board must draw the
   // page from that copy; openPage skips the page already on screen, so
   // without this the board keeps redrawing the old copy and misses changes.
@@ -179,13 +248,14 @@ function showView(view, { animate = true } = {}) {
 
 function commit(op) {
   if (!applyOp(space, op)) return false;
-  socket.emit('op', op);
+  send(op);
   afterOp(op);
   return true;
 }
 
 // Updates the screen after an op, from this device or another.
 function afterOp(op) {
+  persistSoon();
   const onPage = op.pageId && op.pageId === current.pageId;
   switch (op.type) {
     case 'stroke.start':
@@ -245,7 +315,7 @@ function showLibrary({ broadcast = true } = {}) {
   current = { notebookId: null, pageId: null };
   show('library');
   renderLibrary();
-  if (broadcast) socket.emit('view', { screen: 'library' });
+  if (broadcast) sendView({ screen: 'library' });
 }
 
 let libraryTimer = null;
@@ -334,7 +404,7 @@ function openPage(notebookId, pageId, { broadcast = true, animate = true } = {})
   const fromGrid = grid.open;
   closeGrid();
   if (pageId === current.pageId) {
-    if (broadcast && fromGrid) socket.emit('view', { screen: 'page', notebookId, pageId });
+    if (broadcast && fromGrid) sendView({ screen: 'page', notebookId, pageId });
     return;
   }
   if (fromGrid) animate = false;
@@ -355,7 +425,7 @@ function openPage(notebookId, pageId, { broadcast = true, animate = true } = {})
   const lastPages = readJson(KEY.lastPages) ?? {};
   lastPages[notebookId] = pageId;
   localStorage.setItem(KEY.lastPages, JSON.stringify(lastPages));
-  if (broadcast) socket.emit('view', { screen: 'page', notebookId, pageId });
+  if (broadcast) sendView({ screen: 'page', notebookId, pageId });
 }
 
 // --- Page grid -------------------------------------------------------------
@@ -372,7 +442,7 @@ function openGrid({ broadcast = true } = {}) {
   grid = { open: true, editing: false };
   els.pageGrid.hidden = false;
   renderGrid();
-  if (broadcast) socket.emit('view', { screen: 'grid', notebookId: current.notebookId, pageId: current.pageId });
+  if (broadcast) sendView({ screen: 'grid', notebookId: current.notebookId, pageId: current.pageId });
 }
 
 function closeGrid() {
@@ -833,7 +903,7 @@ function addPoints(points) {
 
 function flushStroke() {
   if (!live?.unsent.length) return;
-  socket.emit('op', { type: 'stroke.extend', pageId: live.pageId, strokeId: live.strokeId, points: live.unsent });
+  send({ type: 'stroke.extend', pageId: live.pageId, strokeId: live.strokeId, points: live.unsent });
   live.unsent = [];
 }
 
@@ -1214,14 +1284,14 @@ function toast(message) {
 }
 
 els.createSpace.onclick = () => {
-  socket.emit('space:create', (res) => res.ok && loadSpace(res.space, null));
+  socket.emit('space:create', (res) => res.ok && resync({ space: res.space }));
 };
 
 els.joinForm.onsubmit = (e) => {
   e.preventDefault();
   const code = els.joinCode.value.replace(/\D/g, '');
-  socket.emit('space:join', { code }, (res) => {
-    if (res.ok) loadSpace(res.space, res.view);
+  socket.emit('space:join', { code, client: outbox.client }, (res) => {
+    if (res.ok) resync(res);
     else show('pair', res.error);
   });
 };
@@ -1253,7 +1323,7 @@ els.prev.onclick = () => go(-1);
 els.pageNumber.onclick = () => {
   if (!grid.open) return openGrid();
   closeGrid();
-  socket.emit('view', { screen: 'page', notebookId: current.notebookId, pageId: current.pageId });
+  sendView({ screen: 'page', notebookId: current.notebookId, pageId: current.pageId });
 };
 els.gridDone.onclick = () => setEditing(false);
 els.libraryDone.onclick = () => setLibraryEditing(false);
@@ -1326,6 +1396,11 @@ function iconButton(label, text, onclick) {
 
 function forgetSpace() {
   localStorage.removeItem(KEY.code);
+  forgotten = true;
+  clearTimeout(persistTimer);
+  persistTimer = null;
+  Object.assign(outbox, new Outbox());
+  clearLocal();
   history.replaceState(null, '', '/');
 }
 
@@ -1344,3 +1419,8 @@ function readJson(key) {
     return null;
   }
 }
+
+// Start from the saved copy, so the notebooks show at once and work with no
+// server. The connection then replaces it with the server's copy, with the
+// waiting changes applied on top.
+if (savedHere) loadSpace(saved.space, null);

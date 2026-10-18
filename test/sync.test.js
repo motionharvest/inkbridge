@@ -80,3 +80,42 @@ test('a pasted image is stored once and served by name', async () => {
   const served = await fetch(`http://127.0.0.1:${server.port}/assets/${first.asset}`);
   assert.deepEqual(Buffer.from(await served.arrayBuffer()), png);
 });
+
+test('a numbered change is confirmed, applied once, and remembered across a reconnect', async () => {
+  const first = connect();
+  const { space } = await call(first, 'space:create');
+  const notebook = { id: newId(), title: 'Offline' };
+  const page = { id: newId() };
+  const client = newId();
+  const stroke = { id: newId(), color: '#ffffff', width: 4, points: [[0, 0, 0.5]] };
+  const changes = [
+    { type: 'notebook.create', notebook, page },
+    { type: 'stroke.start', pageId: page.id, stroke },
+    { type: 'stroke.extend', pageId: page.id, strokeId: stroke.id, points: [[1, 1, 0.5]] },
+  ];
+
+  const watcher = connect();
+  await call(watcher, 'space:join', { code: space.code });
+  const relayed = [];
+  watcher.on('op', (op) => relayed.push(op.type));
+
+  for (const [index, change] of changes.entries()) await call(first, 'op', change, { client, seq: index + 1 });
+  // The device lost the last confirmation, so it sends the last change again.
+  await call(first, 'op', changes[2], { client, seq: 3 });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  assert.deepEqual(relayed, ['notebook.create', 'stroke.start', 'stroke.extend']);
+  const returning = connect(space.code);
+  const joined = await call(returning, 'space:join', { code: space.code, client });
+  assert.equal(joined.applied, 3);
+  assert.equal(joined.space.pages[page.id].strokes[0].points.length, 2);
+  assert.equal((await call(returning, 'space:join', { code: space.code, client: newId() })).applied, 0);
+
+  // The count survives a restart of the server's memory.
+  server.store.flush();
+  server.store.spaces.clear();
+  server.store.applied.clear();
+  assert.equal(server.store.lastApplied(space.code, client), 0);
+  server.store.get(space.code);
+  assert.equal(server.store.lastApplied(space.code, client), 3);
+});

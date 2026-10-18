@@ -13,6 +13,8 @@ export class SpaceStore {
     this.dataDir = dataDir;
     this.spaces = new Map();
     this.views = new Map();
+    // For each space, the highest change number applied from each device.
+    this.applied = new Map();
     this.timers = new Map();
     fs.mkdirSync(dataDir, { recursive: true });
   }
@@ -23,6 +25,7 @@ export class SpaceStore {
     while (this.get(code));
     const space = emptySpace(code);
     this.spaces.set(code, space);
+    this.applied.set(code, new Map());
     this.changed(code);
     return space;
   }
@@ -32,9 +35,20 @@ export class SpaceStore {
     if (this.spaces.has(code)) return this.spaces.get(code);
     const file = this.file(code);
     if (!fs.existsSync(file)) return undefined;
-    const space = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const { applied = {}, ...space } = JSON.parse(fs.readFileSync(file, 'utf8'));
     this.spaces.set(code, space);
+    this.applied.set(code, new Map(Object.entries(applied)));
     return space;
+  }
+
+  // The number of the last change from `client` that this space has applied.
+  lastApplied(code, client) {
+    return this.applied.get(code)?.get(client) ?? 0;
+  }
+
+  noteApplied(code, client, seq) {
+    this.applied.get(code)?.set(client, seq);
+    this.changed(code);
   }
 
   changed(code) {
@@ -47,7 +61,7 @@ export class SpaceStore {
     const space = this.spaces.get(code);
     if (!space) return;
     const file = this.file(code);
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify(space));
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...space, applied: Object.fromEntries(this.applied.get(code) ?? []) }));
     fs.renameSync(`${file}.tmp`, file);
   }
 
