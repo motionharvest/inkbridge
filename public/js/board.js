@@ -23,6 +23,12 @@ const LONG_PRESS_MS = 500; // how long a still press lasts before it is a long p
 // On a computer, Ctrl with the scroll wheel or a trackpad pinch zooms, and
 // scrolling pans a zoomed page.
 //
+// A palm can still reach the glass before the Pencil does and pass for a
+// finger. Three rules keep it from moving the view: a touch is ignored while
+// the Pencil hovers or within PEN_QUIET_MS of it; a finger must travel
+// TAP_SLOP before it pans or zooms; and a Pencil that lands while fingers are
+// down puts the view back where it was when the first of them landed.
+//
 // The canvases cover the whole stage. The view is a scale and an offset
 // that place the page inside the stage; every draw call goes through it,
 // so zooming redraws sharp ink instead of stretching pixels.
@@ -44,6 +50,7 @@ export class Board {
     this.drawing = null;
     this.touches = new Map();
     this.gesture = null;
+    this.viewBeforeTouch = null; // zoom and pan when the first finger landed
     this.lastPenAt = 0;
     this.lastTwoFingerTapAt = 0;
     this.eraserRadius = 0;
@@ -346,9 +353,12 @@ export class Board {
       this.drawing = null;
       this.callbacks.onStrokeEnd();
     }
+    if (e.pointerType === 'pen') {
+      this.lastPenAt = Date.now();
+      this.restoreViewBeforeTouch();
+    }
     this.endGesture();
     this.drawing = { id: e.pointerId };
-    if (e.pointerType === 'pen') this.lastPenAt = Date.now();
     this.capture(e.pointerId);
     this.showRing(e);
     this.callbacks.onStrokeStart(this.toPage(e));
@@ -391,6 +401,8 @@ export class Board {
       return;
     }
     if (this.touches.has(e.pointerId)) return this.touchMove(e);
+    // A Pencil hovering above the glass means a palm is about to land.
+    if (e.pointerType === 'pen') this.lastPenAt = Date.now();
     if (e.pointerType !== 'touch' && this.page) this.callbacks.onHover?.(this.toPage(e));
   }
 
@@ -415,10 +427,11 @@ export class Board {
     this.touches.set(e.pointerId, this.stagePoint(e));
     this.capture(e.pointerId);
     if (this.touches.size === 1) {
+      this.viewBeforeTouch = { zoom: this.zoom, pan: { ...this.pan } };
       const at = this.stagePoint(e);
       this.gesture =
         this.zoom > 1.01
-          ? { kind: 'pan', last: at }
+          ? { kind: 'pan', start: at, last: at, moved: false }
           : { kind: 'swipe', id: e.pointerId, x: at.x, y: at.y, t: performance.now(), dx: 0, dy: 0, point: this.toPage(e) };
       this.sheet.style.transition = 'none';
       this.startPress(e);
@@ -453,11 +466,14 @@ export class Board {
       this.sheet.style.transform = `translateX(${shown}px)`;
       this.setPull(pastLast ? -g.dx / PULL_DISTANCE : 0);
     } else if (g?.kind === 'pan') {
+      if (!g.moved && distance(g.start, point) <= TAP_SLOP) return;
+      g.moved = true;
       this.panBy(point.x - g.last.x, point.y - g.last.y);
       g.last = point;
     } else if (g?.kind === 'pinch' && this.touches.size >= 2) {
       const start = g.starts.get(e.pointerId);
       if (start && distance(start, point) > TAP_SLOP) g.moved = true;
+      if (!g.moved) return;
       const [a, b] = [...this.touches.values()];
       this.zoomAt(g.from.zoom * (distance(a, b) / g.distance), midpoint(a, b), g.from);
     }
@@ -519,6 +535,16 @@ export class Board {
     } else {
       this.lastTwoFingerTapAt = now;
     }
+  }
+
+  // Fingers that were down when the Pencil landed were most likely a palm,
+  // so whatever they did to the view is undone.
+  restoreViewBeforeTouch() {
+    if (!this.touches.size || !this.viewBeforeTouch) return;
+    this.zoom = this.viewBeforeTouch.zoom;
+    this.pan = { ...this.viewBeforeTouch.pan };
+    this.viewBeforeTouch = null;
+    this.scheduleRedraw();
   }
 
   endGesture() {

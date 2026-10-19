@@ -97,7 +97,7 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `Ctrl+Z` or `⌘Z` | Undo |
 | `Esc` | Clear the selection, or go back to the notebook list |
 
-A finger never draws. This rule keeps a resting palm from leaving marks, and it frees fingers for swipes and zoom. Zoom belongs to each device and resets when the page changes. A touch within half a second of Pencil input is ignored for the same reason.
+A finger never draws. This rule keeps a resting palm from leaving marks, and it frees fingers for swipes and zoom. Zoom belongs to each device and resets when the page changes. A touch within half a second of Pencil input, or while the Pencil hovers above the glass, is ignored for the same reason. A finger must move 12 pixels before it moves or zooms a page, so a resting palm that only shifts a little leaves the view alone. When the Pencil touches down while fingers are on the glass, the view returns to where it was when the first of those fingers landed, because those fingers were most likely a palm.
 
 On the iPad, Safari's **Share → Add to Home Screen** opens Inkbridge full screen, without the browser's address bar.
 
