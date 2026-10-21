@@ -1,8 +1,8 @@
 import { GRID, PAGE, pageItems } from './shared/ops.js';
 
-const DOT_RADIUS = 1.7;
-const TEXT_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-const LINE_HEIGHT = 1.3;
+export const DOT_RADIUS = 1.7;
+export const TEXT_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+export const LINE_HEIGHT = 1.3;
 
 // All drawing functions work in page units. The caller sets the canvas
 // transform that maps page units to device pixels.
@@ -132,7 +132,7 @@ export function measureText(text, size, maxWidth) {
 
 // Breaks text at newlines, then at spaces so no line is wider than `width`.
 // A single word wider than `width` stays on its own line.
-function wrapText(ctx, text, width) {
+export function wrapText(ctx, text, width) {
   const lines = [];
   for (const paragraph of text.split('\n')) {
     let line = '';
@@ -148,10 +148,10 @@ function wrapText(ctx, text, width) {
   return lines;
 }
 
-function widthAt(stroke, pressure) {
+export function widthAt(stroke, pressure) {
   return stroke.width * (0.35 + 0.9 * pressure);
 }
 
-function midpoint(a, b) {
+export function midpoint(a, b) {
   return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 }

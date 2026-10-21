@@ -28,6 +28,7 @@ const SHELL = [
   '/js/outbox.js',
   '/js/render.js',
   '/js/smooth.js',
+  '/js/svg.js',
   '/js/shared/ops.js',
 ];
 // How long to wait for the server before opening the saved copy. A device

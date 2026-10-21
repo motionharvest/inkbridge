@@ -7,6 +7,7 @@ import { createSmoother } from './smooth.js';
 import { clearLocal, loadLocal, saveLocal } from './local.js';
 import { Outbox } from './outbox.js';
 import { loadImage, measureText, onImageLoad, renderPage } from './render.js';
+import { pageSvg } from './svg.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
 
 // The pen and the eraser each have three size slots, and the pen has color
@@ -1119,44 +1120,69 @@ function undo() {
 
 // --- Copy ------------------------------------------------------------------
 
-// Copy sends the page to the server, which runs on the computer and puts
-// the image on the computer's clipboard. That works from any device, with
-// or without an Inkbridge tab open on the computer. A device whose browser
-// allows clipboard writes also copies the image to its own clipboard.
+// Copy writes the page as SVG source and sends it to the server, which runs
+// on the computer and puts the text on the computer's clipboard. That works
+// from any device, with or without an Inkbridge tab open on the computer. A
+// device whose browser allows clipboard writes also copies the text to its
+// own clipboard.
 async function copyPage() {
   const page = space?.pages[current.pageId];
   if (!page) return;
-  // A selected region renders at twice page resolution, so a small region
-  // still pastes as a usable image.
+  // A selection copies only its rectangle, without the dot grid, so only
+  // the ink and pasted items show on the paper color.
   const region = selection && selectionRegion();
-  // A selection copies without the dot grid, so only the ink and pasted
-  // items show on the paper color.
-  const canvas = region ? renderPage(page, 2, region, { dots: false }) : renderPage(page, 1);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-  const [computer, here] = await Promise.all([copyToComputer(blob), copyHere(blob)]);
-  if (computer.ok) return toast("Page copied to the computer's clipboard.");
-  if (here) return toast(`Page copied here. The computer did not take it: ${computer.error}`);
+  const svg = pageSvg(page, {
+    ...(region ? { region, dots: false } : {}),
+    images: await imageDataUrls(page),
+    measure: document.createElement('canvas').getContext('2d'),
+  });
+  const [computer, here] = await Promise.all([copyToComputer(svg), copyHere(svg)]);
+  if (computer.ok) return toast("Page copied to the computer's clipboard as SVG.");
+  if (here) return toast(`Page copied here as SVG. The computer did not take it: ${computer.error}`);
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `inkbridge-${current.pageId}.png`;
+  link.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  link.download = `inkbridge-${current.pageId}.svg`;
   link.click();
-  toast(`The page downloaded as a PNG. The computer did not take it: ${computer.error}`);
+  toast(`The page downloaded as an SVG. The computer did not take it: ${computer.error}`);
 }
 
-async function copyToComputer(blob) {
+// Reads each pasted image on the page as a data URL, so the SVG carries
+// the bitmap itself. An image that cannot be read is left out of the copy.
+async function imageDataUrls(page) {
+  const assets = [...new Set(pageItems(page).filter((i) => i.kind === 'image').map((i) => i.asset))];
+  const urls = await Promise.all(
+    assets.map(async (asset) => {
+      try {
+        const res = await fetch(`/assets/${asset}`);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return new Map(assets.map((asset, i) => [asset, urls[i]]).filter(([, url]) => url));
+}
+
+async function copyToComputer(svg) {
   if (!socket.connected) return { ok: false, error: 'this device is offline.' };
-  const bytes = await blob.arrayBuffer();
   return new Promise((resolve) => {
-    socket.timeout(8000).emit('clipboard:image', bytes, (err, res) => {
+    socket.timeout(8000).emit('clipboard:svg', svg, (err, res) => {
       resolve(err ? { ok: false, error: 'the server did not answer.' } : res);
     });
   });
 }
 
-async function copyHere(blob) {
+async function copyHere(svg) {
   try {
-    if (!navigator.clipboard?.write || !window.ClipboardItem) return false;
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    if (!navigator.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(svg);
     return true;
   } catch {
     return false;

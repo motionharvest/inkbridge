@@ -1,6 +1,6 @@
 # Inkbridge
 
-Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. Copy on any device puts the page on the computer's clipboard as a PNG image, ready to paste into a prompt. Paste brings an image or text onto the page, where every device sees it and you can draw on it.
+Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. Copy on any device puts the page on the computer's clipboard as SVG code, ready to paste into a prompt. Paste brings an image or text onto the page, where every device sees it and you can draw on it.
 
 The project exists to make one path fast: sketch on the iPad with the Pencil, then paste that sketch on the computer.
 
@@ -36,7 +36,7 @@ Undo reverses this device's last step on the current page. A step is one drawn l
 
 Every device follows the others, in both directions. The space is always on one view: the notebook list, one page, or a notebook's page grid. When any device opens a page, goes back to the notebook list, or creates a notebook and enters it, every other device does the same. A device that joins or reconnects starts on the view the space is on. The computer therefore shows what you see on the iPad without any input.
 
-The Lasso tool selects by drawing a freehand loop around ink and pasted items. A line is selected when at least half of it is inside the loop. A pasted item is selected when its center is inside. Pressing inside the loop and dragging, with the Pencil or the mouse, moves the selection, and every device sees it move. A tap outside the loop, with the Pencil, the mouse, or a finger, clears the selection; the next press starts a new loop. Pressing and holding inside the loop opens a menu with Copy and Remove selection. Copy does what the toolbar's Copy does. Remove selection removes the selected ink and items at once, with no confirmation. While a selection exists, Copy copies the rectangle around the loop on plain paper color, without the dot grid, at twice page resolution so a small region still pastes as a usable image. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The loop belongs to the device that drew it and does not sync. Undo after a move moves the selection back, and Undo after Remove selection puts the removed ink and items back.
+The Lasso tool selects by drawing a freehand loop around ink and pasted items. A line is selected when at least half of it is inside the loop. A pasted item is selected when its center is inside. Pressing inside the loop and dragging, with the Pencil or the mouse, moves the selection, and every device sees it move. A tap outside the loop, with the Pencil, the mouse, or a finger, clears the selection; the next press starts a new loop. Pressing and holding inside the loop opens a menu with Copy and Remove selection. Copy does what the toolbar's Copy does. Remove selection removes the selected ink and items at once, with no confirmation. While a selection exists, Copy copies the rectangle around the loop on plain paper color, without the dot grid. A tap without a drag, `Esc`, a page change, or another tool clears the selection. The loop belongs to the device that drew it and does not sync. Undo after a move moves the selection back, and Undo after Remove selection puts the removed ink and items back.
 
 Paste puts an image or a block of text on the page. A pasted item sits under the ink, so you can draw on a pasted picture and copy the result back out. `Ctrl+V` or `⌘V` pastes the clipboard of the device you press it on. The Paste button in the toolbar pastes the computer's clipboard, read by the server, so the iPad can paste what you copied on the computer. An image keeps its pixel size, shrinks to fit the part of the page on screen, and lands in the middle of it. Text takes the selected pen color and wraps at 900 page units. A second paste onto the same spot moves down and to the right. Undo removes a paste.
 
@@ -87,7 +87,7 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `Ctrl+=`, `Ctrl+-`, `Ctrl+0` | Zoom in, zoom out, show the whole page |
 | `→` or `Page Down` | Next page, or a new page at the end |
 | `←` or `Page Up` | Previous page |
-| `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG to the computer's clipboard |
+| `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as SVG code to the computer's clipboard |
 | `Ctrl+V` or `⌘V` | Paste this device's clipboard onto the page |
 | The Paste button | Paste the computer's clipboard onto the page |
 | `E` | Switch between the Pen and the Eraser |
@@ -103,15 +103,15 @@ On the iPad, Safari's **Share → Add to Home Screen** opens Inkbridge full scre
 
 ## How Copy works
 
-The server runs on the computer, so the server can reach the computer's clipboard. Copy renders the page as a 1600 by 1120 PNG on the device where you press it and sends the image to the server. The server puts the image on the computer's clipboard with a small GTK helper, `server/clipboard-owner.py`, on Linux with X11, `wl-copy` on Linux with Wayland, `osascript` on macOS, or PowerShell on Windows. The computer needs no Inkbridge tab open for this.
+The server runs on the computer, so the server can reach the computer's clipboard. Copy writes the page as SVG source, 1600 by 1120 units, on the device where you press it and sends the text to the server. Paper, dots, ink, and pasted text are vector shapes. A pasted image is a bitmap, so the SVG carries it inside as a data URL. Each pen line keeps its pressure: neighboring curves whose widths round to the same half unit share one path. The server puts the text on the computer's clipboard with a small GTK helper, `server/clipboard-owner.py`, on Linux with X11, `wl-copy` on Linux with Wayland, `pbcopy` on macOS, or PowerShell on Windows. The computer needs no Inkbridge tab open for this.
 
-The other devices in the space show a short notice that a page went to the computer's clipboard. A device whose browser allows clipboard writes, such as the computer's own browser on `localhost`, also copies the image to its own clipboard. When neither clipboard takes the image, the page downloads as a PNG file.
+The other devices in the space show a short notice that a page went to the computer's clipboard. A device whose browser allows clipboard writes, such as the computer's own browser on `localhost`, also copies the SVG code to its own clipboard. When neither clipboard takes it, the page downloads as an SVG file.
 
 ## How Paste works
 
 A pasted image travels to the server once, over Socket.IO. The server stores it in `data/assets/`, named by a hash of its bytes, and answers with that name. The device then adds the item to the page with an op that carries only the name and the item's position and size. Every device loads the image from `/assets/<name>`. An image larger than 10 MB is first re-encoded on the device as a JPEG no larger than 3200 pixels on its longest side.
 
-The Paste button asks the server to read the computer's clipboard with `xclip` on X11 or `wl-paste` on Wayland. An image on the clipboard wins over text, because the clipboard that Copy fills also offers an empty text.
+The Paste button asks the server to read the computer's clipboard with `xclip` on X11 or `wl-paste` on Wayland. An image on the clipboard wins over text. A page copied from Inkbridge pastes back as text, its SVG code.
 
 ## How sync works
 
@@ -140,7 +140,8 @@ public/
   index.html, style.css     the three screens: pair, notebook list, page
   js/app.js                 state, screens, Socket.IO wiring, copy
   js/board.js               the page view, zoom, Pencil and finger input, page slides
-  js/render.js              paper, pasted items, ink, and PNG rendering
+  js/render.js              paper, pasted items, and ink on a canvas
+  js/svg.js                 the same page written as SVG source, for Copy
   js/erase.js               clips lines against the eraser circle
   js/lasso.js               what a lasso loop contains
   js/smooth.js              smooths pen input into stroke points
@@ -171,11 +172,11 @@ These statements describe version 0.1.0.
 
 The server has no authentication. Anyone on the same network who knows a space code can open that space. Run it on a network you trust.
 
-Copy reaches the clipboard of the one computer that runs the server. A second computer in the same space does not receive the image on its clipboard. The iPad's own clipboard does not receive it either, because the iPad loads the app over plain HTTP, and browsers allow clipboard writes only on secure pages.
+Copy reaches the clipboard of the one computer that runs the server. A second computer in the same space does not receive the SVG on its clipboard. The iPad's own clipboard does not receive it either, because the iPad loads the app over plain HTTP, and browsers allow clipboard writes only on secure pages.
 
-Before the image reaches the clipboard, the server keeps only the PNG chunks that hold the picture and drops metadata. Safari on the iPad adds `eXIf` and `sRGB` chunks to every canvas it saves, so without this step a copy from the iPad differs from a copy made on the computer. On X11 the helper offers the PNG bytes as `image/png` and an empty string as text. An app that asks for an image receives the picture. A terminal's paste key asks for text, receives the empty string, and sends an empty paste. A terminal multiplexer such as herdr reads that empty paste as the signal to fetch the image, the same way it handles a screenshot tool's image. Without Python's GTK bindings the server falls back to `xclip`, which also hands the PNG bytes to apps that ask for text. The Linux path is verified with the GTK helper on X11. The macOS, Windows, and Wayland paths are written but not yet run.
+On X11 the helper offers the SVG source as `image/svg+xml` for apps that take SVG images and under the text types, so an editor, a terminal, or a prompt pastes the code. Without Python's GTK bindings the server falls back to `xclip`, which offers the source only as text. The Linux path is verified with the GTK helper on X11. The macOS, Windows, and Wayland paths are written but not yet run.
 
-Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard as a 1600 by 1120 PNG, cutting a gap in one line with the Eraser, restoring the line with Undo, adding and editing color slots, and zooming with `Ctrl+=` while drawing stays under the pointer. On the iPad, the user drew with the Pencil and saw the ink sync to the computer. Pinch zoom on the iPad is not yet tested on a device.
+Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard, cutting a gap in one line with the Eraser, restoring the line with Undo, adding and editing color slots, and zooming with `Ctrl+=` while drawing stays under the pointer. On the iPad, the user drew with the Pencil and saw the ink sync to the computer. Pinch zoom on the iPad is not yet tested on a device.
 
 Pasting from the computer's clipboard works on Linux only. On macOS and Windows the Paste button reports that it is not supported, and `Ctrl+V` on the computer's own browser still works.
 
