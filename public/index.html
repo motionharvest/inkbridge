@@ -52,7 +52,7 @@
           <button id="undo" class="tool" title="Undo (Ctrl+Z)" aria-label="Undo">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
           </button>
-          <button id="copy" class="tool" title="Copy the page, or the lasso selection, to the computer (Ctrl+C)" aria-label="Copy">
+          <button id="copy" class="tool" title="Copy the page, or the lasso selection, to the computer as a PNG (Ctrl+C). Hold for SVG." aria-label="Copy">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2" /><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5" /></svg>
           </button>
           <button id="paste" class="tool" title="Paste the computer's clipboard onto the page (Ctrl+V pastes this device's clipboard)" aria-label="Paste">
@@ -80,7 +80,12 @@
       </header>
       <div id="selection-menu" class="selection-menu" role="menu" hidden>
         <button id="copy-selection" role="menuitem">Copy</button>
+        <button id="copy-selection-svg" role="menuitem">Copy as SVG</button>
         <button id="remove-selection" class="danger" role="menuitem">Remove selection</button>
+      </div>
+      <div id="copy-menu" class="selection-menu" role="menu" hidden>
+        <button id="copy-png" role="menuitem">Copy as PNG</button>
+        <button id="copy-svg" role="menuitem">Copy as SVG</button>
       </div>
       <div id="color-picker" class="color-picker" role="dialog" aria-label="Color picker" hidden></div>
       <div id="size-menu" class="size-menu" hidden>

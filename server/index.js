@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import { applyOp } from '../public/js/shared/ops.js';
 import { AssetStore } from './assets.js';
-import { copySvgToClipboard, readClipboard } from './clipboard.js';
+import { copyImageToClipboard, copySvgToClipboard, readClipboard } from './clipboard.js';
 import { SpaceStore } from './store.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -99,7 +99,19 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
       socket.to(code).emit('view', clean);
     });
 
-    // A device sends a page as SVG source. The server puts it on this
+    // A device sends a page as PNG bytes. The server puts it on this
+    // computer's clipboard and tells the other devices it happened.
+    socket.on('clipboard:image', async (png, ack) => {
+      try {
+        await copyImageToClipboard(Buffer.isBuffer(png) ? png : Buffer.from(png ?? []));
+        ack?.({ ok: true });
+        if (socket.data.code) socket.to(socket.data.code).emit('clipboard:copied');
+      } catch (error) {
+        ack?.({ ok: false, error: error.message });
+      }
+    });
+
+    // A device sends a page as SVG source, the same way. The server puts it on this
     // computer's clipboard and tells the other devices it happened.
     socket.on('clipboard:svg', async (svg, ack) => {
       try {

@@ -72,6 +72,10 @@ const els = {
   selectionMenu: $('#selection-menu'),
   colorPicker: $('#color-picker'),
   copySelection: $('#copy-selection'),
+  copySelectionSvg: $('#copy-selection-svg'),
+  copyMenu: $('#copy-menu'),
+  copyPng: $('#copy-png'),
+  copySvg: $('#copy-svg'),
   removeSelection: $('#remove-selection'),
   prev: $('#prev'),
   next: $('#next'),
@@ -1173,30 +1177,49 @@ function fillAt([x, y], color) {
 
 // --- Copy ------------------------------------------------------------------
 
-// Copy writes the page as SVG source and sends it to the server, which runs
-// on the computer and puts the text on the computer's clipboard. That works
-// from any device, with or without an Inkbridge tab open on the computer. A
-// device whose browser allows clipboard writes also copies the text to its
-// own clipboard.
-async function copyPage() {
+// Copy sends the page to the server, which runs on the computer and puts
+// it on the computer's clipboard. That works from any device, with or
+// without an Inkbridge tab open on the computer. A device whose browser
+// allows clipboard writes also copies the page to its own clipboard.
+//
+// A tap on Copy copies a PNG. A long press on Copy opens a menu that also
+// copies the page as SVG source: vector ink and text, with pasted images
+// inside as data URLs.
+const COPY_FORMATS = {
+  png: { name: 'a PNG', event: 'clipboard:image', type: 'image/png' },
+  svg: { name: 'SVG', event: 'clipboard:svg', type: 'image/svg+xml' },
+};
+
+async function copyPage(format = 'png') {
   const page = space?.pages[current.pageId];
   if (!page) return;
   // A selection copies only its rectangle, without the dot grid, so only
   // the ink and pasted items show on the paper color.
   const region = selection && selectionRegion();
-  const svg = pageSvg(page, {
-    ...(region ? { region, dots: false } : {}),
-    images: await imageDataUrls(page),
-    measure: document.createElement('canvas').getContext('2d'),
-  });
-  const [computer, here] = await Promise.all([copyToComputer(svg), copyHere(svg)]);
-  if (computer.ok) return toast("Page copied to the computer's clipboard as SVG.");
-  if (here) return toast(`Page copied here as SVG. The computer did not take it: ${computer.error}`);
+  const { name, event, type } = COPY_FORMATS[format];
+  let data, blob;
+  if (format === 'svg') {
+    data = pageSvg(page, {
+      ...(region ? { region, dots: false } : {}),
+      images: await imageDataUrls(page),
+      measure: document.createElement('canvas').getContext('2d'),
+    });
+    blob = new Blob([data], { type });
+  } else {
+    // A selected region renders at twice page resolution, so a small region
+    // still pastes as a usable image.
+    const canvas = region ? renderPage(page, 2, region, { dots: false }) : renderPage(page, 1);
+    blob = await new Promise((resolve) => canvas.toBlob(resolve, type));
+    data = await blob.arrayBuffer();
+  }
+  const [computer, here] = await Promise.all([copyToComputer(event, data), copyHere(format, data, blob)]);
+  if (computer.ok) return toast(`Page copied to the computer's clipboard as ${name}.`);
+  if (here) return toast(`Page copied here as ${name}. The computer did not take it: ${computer.error}`);
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  link.download = `inkbridge-${current.pageId}.svg`;
+  link.href = URL.createObjectURL(blob);
+  link.download = `inkbridge-${current.pageId}.${format}`;
   link.click();
-  toast(`The page downloaded as an SVG. The computer did not take it: ${computer.error}`);
+  toast(`The page downloaded as ${name === 'SVG' ? 'an SVG' : name}. The computer did not take it: ${computer.error}`);
 }
 
 // Reads each pasted image on the page as a data URL, so the SVG carries
@@ -1223,23 +1246,38 @@ async function imageDataUrls(page) {
   return new Map(assets.map((asset, i) => [asset, urls[i]]).filter(([, url]) => url));
 }
 
-async function copyToComputer(svg) {
+async function copyToComputer(event, data) {
   if (!socket.connected) return { ok: false, error: 'this device is offline.' };
   return new Promise((resolve) => {
-    socket.timeout(8000).emit('clipboard:svg', svg, (err, res) => {
+    socket.timeout(8000).emit(event, data, (err, res) => {
       resolve(err ? { ok: false, error: 'the server did not answer.' } : res);
     });
   });
 }
 
-async function copyHere(svg) {
+// SVG goes on this device's clipboard as text, so it pastes as code.
+async function copyHere(format, data, blob) {
   try {
-    if (!navigator.clipboard?.writeText) return false;
-    await navigator.clipboard.writeText(svg);
+    if (format === 'svg') {
+      if (!navigator.clipboard?.writeText) return false;
+      await navigator.clipboard.writeText(data);
+    } else {
+      if (!navigator.clipboard?.write || !window.ClipboardItem) return false;
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+// Opens the copy menu under the Copy button.
+function openCopyMenu() {
+  const menu = els.copyMenu;
+  const button = els.copy.getBoundingClientRect();
+  menu.hidden = false;
+  menu.style.left = `${Math.min(Math.max(8, button.left), window.innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${button.bottom + 8}px`;
 }
 
 // --- Paste -----------------------------------------------------------------
@@ -1398,14 +1436,29 @@ els.penTool.onclick = () => chooseTool('pen');
 els.eraserTool.onclick = () => chooseTool('erase');
 els.selectTool.onclick = () => chooseTool('select');
 els.sizeSlider.oninput = () => setSlots(tool.mode, { size: Number(els.sizeSlider.value) });
-els.copy.onclick = copyPage;
+// The click that ends a long press finds the copy menu open and leaves it
+// open. A tap with the menu open closes it on pointerdown, then copies.
+wirePress(els.copy, { onTap: () => {}, onLong: openCopyMenu });
+els.copy.onclick = () => els.copyMenu.hidden && copyPage('png');
+els.copyPng.onclick = () => {
+  els.copyMenu.hidden = true;
+  copyPage('png');
+};
+els.copySvg.onclick = () => {
+  els.copyMenu.hidden = true;
+  copyPage('svg');
+};
 els.paste.onclick = pasteFromComputer;
 els.removeSelection.onclick = removeSelection;
 // Copy in the selection menu does what the toolbar's Copy does: with the
 // selection still in place, it copies the area around the loop.
 els.copySelection.onclick = () => {
   els.selectionMenu.hidden = true;
-  copyPage();
+  copyPage('png');
+};
+els.copySelectionSvg.onclick = () => {
+  els.selectionMenu.hidden = true;
+  copyPage('svg');
 };
 document.addEventListener('paste', pasteEvent);
 els.prev.onclick = () => go(-1);
@@ -1439,6 +1492,7 @@ document.addEventListener(
       closed = true;
     }
     if (!els.selectionMenu.hidden && !els.selectionMenu.contains(e.target)) els.selectionMenu.hidden = true;
+    if (!els.copyMenu.hidden && !els.copyMenu.contains(e.target)) els.copyMenu.hidden = true;
     if (closed && els.stage.contains(e.target)) e.stopPropagation();
   },
   { capture: true },
@@ -1448,6 +1502,7 @@ document.addEventListener('keydown', (e) => {
   if (!current.pageId && libraryEditing && e.key === 'Escape') return setLibraryEditing(false);
   if (!current.pageId || e.target.closest('input, textarea')) return;
   if (e.key === 'Escape' && !els.colorPicker.hidden) return closeColorPicker();
+  if (e.key === 'Escape' && !els.copyMenu.hidden) return (els.copyMenu.hidden = true);
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 'z') return e.preventDefault(), undo();
   if (mod && e.key.toLowerCase() === 'c' && !String(getSelection())) return e.preventDefault(), copyPage();

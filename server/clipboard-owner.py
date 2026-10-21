@@ -1,12 +1,20 @@
-"""Own the X11 clipboard with a page's SVG source.
+"""Own the X11 clipboard with a page, as a PNG image or as SVG source.
 
-Reads SVG source on stdin, takes the clipboard, prints "ready", and keeps
-serving until another program takes the clipboard.
+Takes "png" or "svg" as its argument, reads the bytes on stdin, takes the
+clipboard, prints "ready", and keeps serving until another program takes
+the clipboard.
 
-The clipboard offers the same source under two kinds of type:
+A PNG is offered as image/png, with an empty string under the text types.
+The empty string matters for terminals. A terminal answers its paste key by
+asking for text. If the clipboard has no text type at all, the terminal
+sends nothing. If it has an empty text, the terminal sends an empty paste,
+and terminal multiplexers such as herdr read that empty paste as the signal
+to fetch the image instead. Screenshot tools behave the same way. xclip, by
+contrast, answers a text request with the PNG bytes themselves, which
+pastes binary noise.
 
-  image/svg+xml   for apps that paste SVG images
-  text types      for editors, terminals, and prompts, which paste the code
+SVG source is offered as image/svg+xml for apps that paste SVG images, and
+as the text itself, so editors, terminals, and prompts paste the code.
 
 GTK's selection API does the X11 protocol work, including INCR transfers for
 data larger than one X request.
@@ -22,22 +30,24 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 IMAGE, TEXT = 1, 2
 TEXT_TARGETS = ["UTF8_STRING", "text/plain;charset=utf-8", "text/plain", "STRING", "TEXT"]
 
+kind = sys.argv[1] if len(sys.argv) > 1 else "png"
 data = sys.stdin.buffer.read()
 clipboard = Gdk.Atom.intern("CLIPBOARD", False)
-svg = Gdk.Atom.intern("image/svg+xml", False)
+image = Gdk.Atom.intern("image/svg+xml" if kind == "svg" else "image/png", False)
+text = data.decode("utf-8") if kind == "svg" else ""
 
 owner = Gtk.Invisible()
 owner.realize()
-Gtk.selection_add_target(owner, clipboard, svg, IMAGE)
+Gtk.selection_add_target(owner, clipboard, image, IMAGE)
 for name in TEXT_TARGETS:
     Gtk.selection_add_target(owner, clipboard, Gdk.Atom.intern(name, False), TEXT)
 
 
 def on_selection_get(_widget, selection_data, info, _time):
     if info == IMAGE:
-        selection_data.set(svg, 8, data)
+        selection_data.set(image, 8, data)
     else:
-        selection_data.set_text(data.decode("utf-8"), -1)
+        selection_data.set_text(text, -1)
 
 
 def on_selection_clear(*_args):

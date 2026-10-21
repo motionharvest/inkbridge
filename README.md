@@ -1,6 +1,6 @@
 # Inkbridge
 
-Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. Copy on any device puts the page on the computer's clipboard as SVG code, ready to paste into a prompt. Paste brings an image or text onto the page, where every device sees it and you can draw on it.
+Inkbridge is a sketchpad that runs in the browser on an iPad and on a computer at the same time. Both devices show the same page, and ink appears on the other device while you draw it. Copy on any device puts the page on the computer's clipboard as a PNG image, ready to paste into a prompt. A long press on Copy offers the page as SVG code instead. Paste brings an image or text onto the page, where every device sees it and you can draw on it.
 
 The project exists to make one path fast: sketch on the iPad with the Pencil, then paste that sketch on the computer.
 
@@ -89,7 +89,8 @@ To run the server with automatic restart on file changes, use `npm run dev`. To 
 | `Ctrl+=`, `Ctrl+-`, `Ctrl+0` | Zoom in, zoom out, show the whole page |
 | `→` or `Page Down` | Next page, or a new page at the end |
 | `←` or `Page Up` | Previous page |
-| `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as SVG code to the computer's clipboard |
+| `Ctrl+C` or `⌘C`, or the Copy button | Copy the page as a PNG to the computer's clipboard |
+| Long press on the Copy button | Open a menu with Copy as PNG and Copy as SVG |
 | `Ctrl+V` or `⌘V` | Paste this device's clipboard onto the page |
 | The Paste button | Paste the computer's clipboard onto the page |
 | `E` | Switch between the Pen and the Eraser |
@@ -105,15 +106,15 @@ On the iPad, Safari's **Share → Add to Home Screen** opens Inkbridge full scre
 
 ## How Copy works
 
-The server runs on the computer, so the server can reach the computer's clipboard. Copy writes the page as SVG source, 1600 by 1120 units, on the device where you press it and sends the text to the server. Paper, dots, ink, and pasted text are vector shapes. A pasted image is a bitmap, so the SVG carries it inside as a data URL. Each pen line keeps its pressure: neighboring curves whose widths round to the same half unit share one path. The server puts the text on the computer's clipboard with a small GTK helper, `server/clipboard-owner.py`, on Linux with X11, `wl-copy` on Linux with Wayland, `pbcopy` on macOS, or PowerShell on Windows. The computer needs no Inkbridge tab open for this.
+The server runs on the computer, so the server can reach the computer's clipboard. A tap on Copy renders the page as a 1600 by 1120 PNG on the device where you press it and sends the image to the server. A long press on Copy opens a menu with Copy as PNG and Copy as SVG; the lasso's menu offers the same two. Copy as SVG writes the page as SVG source instead and sends the text. In the SVG, paper, dots, ink, and pasted text are vector shapes. A pasted image is a bitmap, so the SVG carries it inside as a data URL, which can make the code long. Each pen line keeps its pressure: neighboring curves whose widths round to the same half unit share one path. The server puts the page on the computer's clipboard with a small GTK helper, `server/clipboard-owner.py`, on Linux with X11, `wl-copy` on Linux with Wayland, `osascript` for a PNG or `pbcopy` for SVG on macOS, or PowerShell on Windows. The computer needs no Inkbridge tab open for this.
 
-The other devices in the space show a short notice that a page went to the computer's clipboard. A device whose browser allows clipboard writes, such as the computer's own browser on `localhost`, also copies the SVG code to its own clipboard. When neither clipboard takes it, the page downloads as an SVG file.
+The other devices in the space show a short notice that a page went to the computer's clipboard. A device whose browser allows clipboard writes, such as the computer's own browser on `localhost`, also copies the page to its own clipboard. When neither clipboard takes it, the page downloads as a PNG or SVG file.
 
 ## How Paste works
 
 A pasted image travels to the server once, over Socket.IO. The server stores it in `data/assets/`, named by a hash of its bytes, and answers with that name. The device then adds the item to the page with an op that carries only the name and the item's position and size. Every device loads the image from `/assets/<name>`. An image larger than 10 MB is first re-encoded on the device as a JPEG no larger than 3200 pixels on its longest side.
 
-The Paste button asks the server to read the computer's clipboard with `xclip` on X11 or `wl-paste` on Wayland. An image on the clipboard wins over text. A page copied from Inkbridge pastes back as text, its SVG code.
+The Paste button asks the server to read the computer's clipboard with `xclip` on X11 or `wl-paste` on Wayland. An image on the clipboard wins over text, because the clipboard that a PNG copy fills also offers an empty text. A page copied as SVG pastes back as text, its SVG code.
 
 ## How sync works
 
@@ -174,9 +175,9 @@ These statements describe version 0.1.0.
 
 The server has no authentication. Anyone on the same network who knows a space code can open that space. Run it on a network you trust.
 
-Copy reaches the clipboard of the one computer that runs the server. A second computer in the same space does not receive the SVG on its clipboard. The iPad's own clipboard does not receive it either, because the iPad loads the app over plain HTTP, and browsers allow clipboard writes only on secure pages.
+Copy reaches the clipboard of the one computer that runs the server. A second computer in the same space does not receive the page on its clipboard. The iPad's own clipboard does not receive it either, because the iPad loads the app over plain HTTP, and browsers allow clipboard writes only on secure pages.
 
-On X11 the helper offers the SVG source as `image/svg+xml` for apps that take SVG images and under the text types, so an editor, a terminal, or a prompt pastes the code. Without Python's GTK bindings the server falls back to `xclip`, which offers the source only as text. The Linux path is verified with the GTK helper on X11. The macOS, Windows, and Wayland paths are written but not yet run.
+For a PNG, before the image reaches the clipboard, the server keeps only the PNG chunks that hold the picture and drops metadata. Safari on the iPad adds `eXIf` and `sRGB` chunks to every canvas it saves, so without this step a copy from the iPad differs from a copy made on the computer. On X11 the helper offers the PNG bytes as `image/png` and an empty string as text. An app that asks for an image receives the picture. A terminal's paste key asks for text, receives the empty string, and sends an empty paste. A terminal multiplexer such as herdr reads that empty paste as the signal to fetch the image, the same way it handles a screenshot tool's image. Without Python's GTK bindings the server falls back to `xclip`, which also hands the PNG bytes to apps that ask for text. For SVG, the helper offers the source as `image/svg+xml` for apps that take SVG images and under the text types, so an editor, a terminal, or a prompt pastes the code. Without Python's GTK bindings the server falls back to `xclip`, which offers SVG source only as text. The Linux path is verified with the GTK helper on X11. The macOS, Windows, and Wayland paths are written but not yet run.
 
 Verified on a Linux desktop in Brave: creating a space, creating a notebook, drawing with a mouse, adding a page with `→`, copying a page to the clipboard, cutting a gap in one line with the Eraser, restoring the line with Undo, adding and editing color slots, and zooming with `Ctrl+=` while drawing stays under the pointer. On the iPad, the user drew with the Pencil and saw the ink sync to the computer. Pinch zoom on the iPad is not yet tested on a device.
 
