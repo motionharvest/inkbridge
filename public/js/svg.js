@@ -2,7 +2,7 @@ import { GRID, PAGE, pageItems } from './shared/ops.js';
 import { DOT_RADIUS, LINE_HEIGHT, TEXT_FONT, midpoint, widthAt, wrapText } from './render.js';
 
 // Writes a page as SVG source, drawn the same way the canvas draws it.
-// The paper, the ink, and text are vectors. A pasted image is a bitmap, so
+// The paper, the ink, fills, and text are vectors. A pasted image is a bitmap, so
 // it travels inside the SVG as a data URL.
 //
 // `images` maps an asset name to its data URL; an image missing from it is
@@ -31,6 +31,9 @@ export function pageSvg(page, { region = { x: 0, y: 0, width: PAGE.width, height
     if (item.kind === 'image') {
       const href = images.get(item.asset);
       if (href) out.push(`<image x="${n(item.x)}" y="${n(item.y)}" width="${n(item.width)}" height="${n(item.height)}" preserveAspectRatio="none" href="${href}"/>`);
+    } else if (item.kind === 'fill') {
+      const d = item.rings.map((ring) => ring.map(([x, y], i) => `${i ? 'L' : 'M'}${n(item.x + x)} ${n(item.y + y)}`).join('') + 'Z').join('');
+      out.push(`<path d="${d}" fill="${attr(item.color)}" fill-rule="evenodd"/>`);
     } else if (item.kind === 'text' && measure) {
       measure.font = `${item.size}px ${TEXT_FONT}`;
       const lines = wrapText(measure, item.text, item.width)

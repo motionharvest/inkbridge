@@ -15,6 +15,7 @@ export const DEFAULT_PAPER = { color: '#1d1e21', dots: '#7d7f85' };
 const MAX_POINTS_PER_STROKE = 20000;
 const MAX_TITLE = 80;
 const MAX_TEXT = 5000;
+const MAX_FILL_POINTS = 20000;
 
 // Pasted images live as files on the server, named by a hash of their bytes.
 // An image item refers to its file by that name.
@@ -217,9 +218,12 @@ function cleanStroke(page, stroke) {
   };
 }
 
-// An item is an image { kind: 'image', asset, x, y, width, height } or a
-// text block { kind: 'text', text, x, y, width, height, size, color }, in page
-// units. Text wraps to `width`; `height` is the wrapped height when pasted.
+// An item is an image { kind: 'image', asset, x, y, width, height }, a
+// text block { kind: 'text', text, x, y, width, height, size, color }, or a
+// fill { kind: 'fill', x, y, width, height, color, rings }, in page units.
+// Text wraps to `width`; `height` is the wrapped height when pasted. A
+// fill's rings are closed outlines of [x, y] points relative to (x, y),
+// drawn with the even-odd rule.
 function cleanItem(item) {
   if (!isId(item?.id)) return null;
   const x = clamp(Number(item.x) || 0, -PAGE.width, PAGE.width * 2);
@@ -241,6 +245,20 @@ function cleanItem(item) {
       height: clamp(Number(item.height) || 28, 1, PAGE.height * 2),
       color: isColor(item.color) ? item.color : '#ffffff',
     };
+  }
+  if (item.kind === 'fill' && isColor(item.color) && Array.isArray(item.rings)) {
+    let room = MAX_FILL_POINTS;
+    const rings = [];
+    for (const ring of item.rings) {
+      const points = cleanPoints(Array.isArray(ring) ? ring.map((p) => (Array.isArray(p) ? [p[0], p[1], 0] : p)) : [])
+        .slice(0, room)
+        .map(([px, py]) => [px, py]);
+      room -= points.length;
+      if (points.length >= 3) rings.push(points);
+    }
+    if (!rings.length) return null;
+    const height = clamp(Number(item.height) || 0, 1, PAGE.height * 2);
+    return { id: item.id, kind: 'fill', x, y, width, height, color: item.color, rings };
   }
   return null;
 }

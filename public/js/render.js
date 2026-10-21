@@ -70,6 +70,21 @@ export function drawStrokes(ctx, page) {
   for (const stroke of page.strokes) drawStroke(ctx, stroke);
 }
 
+// The page's ink alone as a grid of one cell per page unit, nonzero where
+// any ink touches the cell. The fill tool uses it as the walls a fill
+// cannot cross.
+export function inkWall(page) {
+  const canvas = document.createElement('canvas');
+  canvas.width = PAGE.width;
+  canvas.height = PAGE.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  drawStrokes(ctx, page);
+  const { data } = ctx.getImageData(0, 0, PAGE.width, PAGE.height);
+  const wall = new Uint8Array(PAGE.width * PAGE.height);
+  for (let i = 0; i < wall.length; i++) wall[i] = data[i * 4 + 3] > 0 ? 1 : 0;
+  return wall;
+}
+
 // Renders a page, paper included, onto a new canvas `scale` times page size.
 // With a region { x, y, width, height } in page units, it renders only that
 // part of the page. With `dots: false`, the paper has no dot grid.
@@ -110,6 +125,14 @@ export function drawItems(ctx, page) {
     if (item.kind === 'image') {
       const img = loadImage(item.asset);
       if (img.complete && img.naturalWidth) ctx.drawImage(img, item.x, item.y, item.width, item.height);
+    } else if (item.kind === 'fill') {
+      ctx.fillStyle = item.color;
+      ctx.beginPath();
+      for (const ring of item.rings) {
+        ring.forEach(([x, y], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, item.x + x, item.y + y));
+        ctx.closePath();
+      }
+      ctx.fill('evenodd');
     } else if (item.kind === 'text') {
       ctx.fillStyle = item.color;
       ctx.font = `${item.size}px ${TEXT_FONT}`;

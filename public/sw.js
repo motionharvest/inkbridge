@@ -23,6 +23,7 @@ const SHELL = [
   '/js/board.js',
   '/js/colorpicker.js',
   '/js/erase.js',
+  '/js/fill.js',
   '/js/lasso.js',
   '/js/local.js',
   '/js/outbox.js',

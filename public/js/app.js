@@ -1,12 +1,13 @@
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
 import { cutStrokes } from './erase.js';
+import { fillShape } from './fill.js';
 import { insideLasso, lassoBounds, lassoContents } from './lasso.js';
 import { createColorPicker } from './colorpicker.js';
 import { createSmoother } from './smooth.js';
 import { clearLocal, loadLocal, saveLocal } from './local.js';
 import { Outbox } from './outbox.js';
-import { loadImage, measureText, onImageLoad, renderPage } from './render.js';
+import { inkWall, loadImage, measureText, onImageLoad, renderPage } from './render.js';
 import { pageSvg } from './svg.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
 
@@ -642,7 +643,8 @@ function renderColorSlots() {
       const swatch = document.createElement('button');
       swatch.className = 'swatch';
       swatch.style.background = color;
-      swatch.title = active ? 'Change this color' : color;
+      swatch.title = active ? 'Change this color, or drag it onto a shape to fill it' : `${color}. Drag it onto a shape to fill it.`;
+      swatch.onpointerdown = (e) => startColorDrag(e, index);
       if (active) {
         swatch.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>';
         swatch.onclick = () => (els.colorPicker.hidden ? openColorPicker(swatch) : closeColorPicker());
@@ -1118,6 +1120,57 @@ function undo() {
   }
 }
 
+// --- Fill ------------------------------------------------------------------
+
+// Dragging a color slot onto the page and letting go fills the area that
+// ink closes off around that point; see fill.js. A dot in the color follows
+// the pointer during the drag. A press that moves less than FILL_DRAG_SLOP
+// px stays a tap on the slot. A fill is an item, so it syncs, sits under
+// the ink, moves with the lasso, and undoes like a paste.
+const FILL_DRAG_SLOP = 10;
+let colorDrag = null; // { id, color, start, dot }
+let skipSlotClick = false; // the click that follows a drag must not select
+
+function startColorDrag(e, index) {
+  if (e.button !== 0 || !current.pageId) return;
+  colorDrag = { id: e.pointerId, color: tool.colors[index], start: { x: e.clientX, y: e.clientY }, dot: null };
+}
+
+function moveColorDrag(e) {
+  const drag = colorDrag;
+  if (drag?.id !== e.pointerId) return;
+  if (!drag.dot) {
+    if (Math.hypot(e.clientX - drag.start.x, e.clientY - drag.start.y) < FILL_DRAG_SLOP) return;
+    closeColorPicker();
+    drag.dot = document.createElement('div');
+    drag.dot.className = 'fill-drop';
+    drag.dot.style.background = drag.color;
+    document.body.append(drag.dot);
+  }
+  drag.dot.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+}
+
+function endColorDrag(e, cancelled = false) {
+  const drag = colorDrag;
+  if (drag?.id !== e.pointerId) return;
+  colorDrag = null;
+  if (!drag.dot) return;
+  drag.dot.remove();
+  skipSlotClick = true;
+  setTimeout(() => (skipSlotClick = false), 400);
+  const target = document.elementFromPoint(e.clientX, e.clientY);
+  if (!cancelled && els.stage.contains(target)) fillAt(board.toPage(e), drag.color);
+}
+
+function fillAt([x, y], color) {
+  const page = space?.pages[current.pageId];
+  if (!page) return;
+  const shape = fillShape(inkWall(page), PAGE.width, PAGE.height, x, y);
+  if (!shape) return toast('Drop the color inside a closed shape to fill it.');
+  const item = { id: newId(), kind: 'fill', color, ...shape };
+  if (commit({ type: 'item.add', pageId: page.id, item })) pushHistory(page.id, { kind: 'item', itemId: item.id });
+}
+
 // --- Copy ------------------------------------------------------------------
 
 // Copy writes the page as SVG source and sends it to the server, which runs
@@ -1331,6 +1384,16 @@ els.leave.onclick = () => {
 els.back.onclick = () => showLibrary();
 els.undo.onclick = undo;
 els.addColor.onclick = addColor;
+window.addEventListener('pointermove', moveColorDrag);
+window.addEventListener('pointerup', (e) => endColorDrag(e));
+window.addEventListener('pointercancel', (e) => endColorDrag(e, true));
+els.colorSlots.addEventListener(
+  'click',
+  (e) => {
+    if (skipSlotClick) e.stopPropagation();
+  },
+  { capture: true },
+);
 els.penTool.onclick = () => chooseTool('pen');
 els.eraserTool.onclick = () => chooseTool('erase');
 els.selectTool.onclick = () => chooseTool('select');
