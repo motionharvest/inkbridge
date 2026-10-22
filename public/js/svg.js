@@ -1,5 +1,5 @@
 import { GRID, PAGE, pageItems } from './shared/ops.js';
-import { DOT_RADIUS, LINE_HEIGHT, TEXT_FONT, midpoint, widthAt, wrapText } from './render.js';
+import { DOT_RADIUS, LINE_HEIGHT, TEXT_FONT, copyScale, dotStep, midpoint, widthAt, wrapText } from './render.js';
 
 // Writes a page as SVG source, drawn the same way the canvas draws it.
 // The paper, the ink, fills, and text are vectors. A pasted image is a bitmap, so
@@ -10,19 +10,26 @@ import { DOT_RADIUS, LINE_HEIGHT, TEXT_FONT, midpoint, widthAt, wrapText } from 
 // wraps at the same words as on the canvas.
 export function pageSvg(page, { region = { x: 0, y: 0, width: PAGE.width, height: PAGE.height }, dots = true, images = new Map(), measure } = {}) {
   const { x, y, width, height } = region;
+  decimals = Math.max(1, Math.ceil(Math.log10(16000 / Math.max(width, height))));
+  // The image's own size is the size a PNG copy of the region has, so a
+  // drawing made far zoomed in still pastes at a readable size.
+  const px = copyScale(region);
   const out = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${n(x)} ${n(y)} ${n(width)} ${n(height)}" width="${n(width)}" height="${n(height)}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${n(x)} ${n(y)} ${n(width)} ${n(height)}" width="${Math.round(width * px)}" height="${Math.round(height * px)}">`,
   ];
 
-  out.push(`<rect x="0" y="0" width="${PAGE.width}" height="${PAGE.height}" fill="${attr(page.paper.color)}"/>`);
+  const box = `x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}"`;
+  out.push(`<rect ${box} fill="${attr(page.paper.color)}"/>`);
   if (dots) {
-    // The canvas puts a dot at every multiple of GRID strictly inside the
-    // page. A pattern tile centered on each of those points draws the same
-    // dots, and the rectangle it fills stops half a tile short of the edges.
+    // The canvas puts a dot at every multiple of the dot step. A pattern
+    // tile centered on each of those points draws the same dots, with the
+    // step a PNG copy of the same region uses.
+    const step = dotStep(copyScale(region), 32);
+    const r = (DOT_RADIUS * step) / GRID;
     out.push(
-      `<defs><pattern id="dots" patternUnits="userSpaceOnUse" x="${GRID / 2}" y="${GRID / 2}" width="${GRID}" height="${GRID}">` +
-        `<circle cx="${GRID / 2}" cy="${GRID / 2}" r="${DOT_RADIUS}" fill="${attr(page.paper.dots)}"/></pattern></defs>`,
-      `<rect x="${GRID / 2}" y="${GRID / 2}" width="${PAGE.width - GRID}" height="${PAGE.height - GRID}" fill="url(#dots)"/>`,
+      `<defs><pattern id="dots" patternUnits="userSpaceOnUse" x="${-step / 2}" y="${-step / 2}" width="${step}" height="${step}">` +
+        `<circle cx="${step / 2}" cy="${step / 2}" r="${r}" fill="${attr(page.paper.dots)}"/></pattern></defs>`,
+      `<rect ${box} fill="url(#dots)"/>`,
     );
   }
 
@@ -64,7 +71,8 @@ function strokeSvg(stroke) {
   let width = null;
   let d = '';
   const segment = (w, from, draw) => {
-    w = Math.round(w * 2) / 2;
+    const quantum = 5 * 10 ** -decimals;
+    w = Math.round(w / quantum) * quantum;
     if (w !== width) {
       if (d) parts.push(`<path d="${d}" stroke-width="${n(width)}"/>`);
       width = w;
@@ -104,10 +112,13 @@ function overlaps(a, b) {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
-// Numbers keep one decimal at most, a tenth of a page unit, which is below a pixel and keeps
-// the source short.
+// Numbers keep about one part in 16000 of the region's longest side: one
+// decimal for a page-sized region, which is below a pixel and keeps the
+// source short, and more decimals for a small drawing made zoomed in.
+let decimals = 1;
+
 function n(value) {
-  return String(Math.round(value * 10) / 10);
+  return String(Number(value.toFixed(decimals)));
 }
 
 function text(value) {

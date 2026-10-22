@@ -1,4 +1,4 @@
-import { GRID, PAGE, pageItems } from './shared/ops.js';
+import { contentBounds, GRID, PAGE, pageItems } from './shared/ops.js';
 
 export const DOT_RADIUS = 1.7;
 export const TEXT_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -7,20 +7,75 @@ export const LINE_HEIGHT = 1.3;
 // All drawing functions work in page units. The caller sets the canvas
 // transform that maps page units to device pixels.
 
-// Without `dots`, only the paper color is drawn.
-export function drawPaper(ctx, paper, { dots = true } = {}) {
+// Fills `region` with the paper color and, unless `dots` is false, the dot
+// grid. Dots sit at every multiple of `step` page units, with radius
+// `radius`. Dots that are not also on the grid twice as wide are drawn at
+// `fade` opacity, so a view can thin the grid out gradually as it zooms.
+export function drawPaper(ctx, paper, { region = PAGE_REGION, dots = true, step = GRID, radius = DOT_RADIUS, fade = 1 } = {}) {
   ctx.fillStyle = paper.color;
-  ctx.fillRect(0, 0, PAGE.width, PAGE.height);
+  ctx.fillRect(region.x, region.y, region.width, region.height);
   if (!dots) return;
   ctx.fillStyle = paper.dots;
-  ctx.beginPath();
-  for (let y = GRID; y < PAGE.height; y += GRID) {
-    for (let x = GRID; x < PAGE.width; x += GRID) {
-      ctx.moveTo(x + DOT_RADIUS, y);
-      ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
+  const x0 = Math.ceil(region.x / step);
+  const y0 = Math.ceil(region.y / step);
+  const x1 = Math.floor((region.x + region.width) / step);
+  const y1 = Math.floor((region.y + region.height) / step);
+  for (const [coarse, alpha] of [[true, 1], [false, fade]]) {
+    if (alpha <= 0) continue;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    for (let j = y0; j <= y1; j++) {
+      for (let i = x0; i <= x1; i++) {
+        if ((i % 2 === 0 && j % 2 === 0) !== coarse) continue;
+        ctx.moveTo(i * step + radius, j * step);
+        ctx.arc(i * step, j * step, radius, 0, Math.PI * 2);
+      }
     }
+    ctx.fill();
   }
-  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+const PAGE_REGION = { x: 0, y: 0, width: PAGE.width, height: PAGE.height };
+
+// The dot spacing for a drawing at `scale` px per page unit: GRID times a
+// power of two, the smallest whose dots are at least `minPx` px apart.
+export function dotStep(scale, minPx) {
+  return GRID * 2 ** Math.ceil(Math.log2(minPx / (GRID * scale)));
+}
+
+// The area Copy takes from a whole page: everything on it, with a margin of
+// a twentieth of its longest side, so a drawing fills the copy at any size.
+// An empty page gives the frame a new page opens on.
+export function copyRegion(page) {
+  const b = contentBounds(page);
+  if (!b) return PAGE_REGION;
+  const pad = Math.max(b.width, b.height) * 0.05;
+  return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
+}
+
+// The px per page unit a copy renders at: `base`, with the longest side
+// then kept between 800 and 4096 px, so a drawing made far zoomed in or out
+// still copies at a readable size.
+export function copyScale(region, base = 1) {
+  const longest = Math.max(region.width, region.height);
+  return Math.min(4096 / longest, Math.max(800 / longest, base));
+}
+
+// The area a reset view shows: the opening frame together with the area
+// Copy takes.
+export function homeRegion(page) {
+  const b = copyRegion(page);
+  const x = Math.min(0, b.x);
+  const y = Math.min(0, b.y);
+  return { x, y, width: Math.max(PAGE.width, b.x + b.width) - x, height: Math.max(PAGE.height, b.y + b.height) - y };
+}
+
+// Grows `region` around its center to the width-to-height ratio `aspect`.
+export function fitAspect(region, aspect) {
+  const width = Math.max(region.width, region.height * aspect);
+  const height = width / aspect;
+  return { x: region.x + (region.width - width) / 2, y: region.y + (region.height - height) / 2, width, height };
 }
 
 // Draws a stroke from point index `from` onward. Each curve depends only on
@@ -70,31 +125,37 @@ export function drawStrokes(ctx, page) {
   for (const stroke of page.strokes) drawStroke(ctx, stroke);
 }
 
-// The page's ink alone as a grid of one cell per page unit, nonzero where
-// any ink touches the cell. The fill tool uses it as the walls a fill
-// cannot cross.
-export function inkWall(page) {
+// The page's ink inside `region` alone as a grid of cells, `scale` cells
+// per page unit, nonzero where any ink touches the cell. The fill tool uses
+// it as the walls a fill cannot cross.
+export function inkWall(page, region, scale) {
+  const width = Math.max(1, Math.round(region.width * scale));
+  const height = Math.max(1, Math.round(region.height * scale));
   const canvas = document.createElement('canvas');
-  canvas.width = PAGE.width;
-  canvas.height = PAGE.height;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale);
   drawStrokes(ctx, page);
-  const { data } = ctx.getImageData(0, 0, PAGE.width, PAGE.height);
-  const wall = new Uint8Array(PAGE.width * PAGE.height);
+  const { data } = ctx.getImageData(0, 0, width, height);
+  const wall = new Uint8Array(width * height);
   for (let i = 0; i < wall.length; i++) wall[i] = data[i * 4 + 3] > 0 ? 1 : 0;
-  return wall;
+  return { wall, width, height };
 }
 
-// Renders a page, paper included, onto a new canvas `scale` times page size.
-// With a region { x, y, width, height } in page units, it renders only that
-// part of the page. With `dots: false`, the paper has no dot grid.
-export function renderPage(page, scale = 1, region = { x: 0, y: 0, width: PAGE.width, height: PAGE.height }, { dots = true } = {}) {
+// Renders the part of a page inside `region`, { x, y, width, height } in
+// page units, paper included, onto a new canvas `scale` px per page unit.
+// With `dots: false`, the paper has no dot grid. The dots sit at least
+// `dotPx` px apart on the canvas, so a region of any size shows a similar
+// number of them; see dotStep.
+export function renderPage(page, scale = 1, region = PAGE_REGION, { dots = true, dotPx = 32 } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(region.width * scale));
   canvas.height = Math.max(1, Math.round(region.height * scale));
   const ctx = canvas.getContext('2d');
   ctx.setTransform(scale, 0, 0, scale, -region.x * scale, -region.y * scale);
-  drawPaper(ctx, page.paper, { dots });
+  const step = dotStep(scale, dotPx);
+  drawPaper(ctx, page.paper, { region, dots, step, radius: (DOT_RADIUS * step) / GRID });
   drawItems(ctx, page);
   drawStrokes(ctx, page);
   return canvas;

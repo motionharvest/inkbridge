@@ -1,13 +1,17 @@
 import { PAGE } from './shared/ops.js';
-import { drawItems, drawPaper, drawStroke, drawStrokes } from './render.js';
+import { DOT_RADIUS, dotStep, drawItems, drawPaper, drawStroke, drawStrokes, homeRegion } from './render.js';
 
 const SWIPE_DISTANCE = 70;
 const SWIPE_VELOCITY = 0.5; // px per ms
 const PEN_QUIET_MS = 500;
 const SLIDE_MS = 180;
 const PAD = 12;
-const MAX_ZOOM = 6;
-const PAN_MARGIN = 60; // px of empty stage allowed past a zoomed page edge
+// Zoom is measured against the scale that fits the opening frame in the
+// stage. Canvas drawing keeps coordinates in single precision, so lines
+// begin to wobble past about a thousand times; the limits sit there.
+const MIN_ZOOM = 1e-4;
+const MAX_ZOOM = 1e3;
+const DOT_MIN_PX = 16; // closest the dot grid gets on screen before it thins out
 const TAP_MS = 300;
 const TAP_SLOP = 12; // px a finger may move and still count as a tap
 const PULL_DISTANCE = 140; // px of finger travel that arms a new page
@@ -15,13 +19,14 @@ const DOUBLE_TAP_MS = 400; // longest gap between the two taps of a double tap
 const LONG_PRESS_MS = 500; // how long a still press lasts before it is a long press
 
 // The board shows one page and turns pointer input into strokes, swipes,
-// and zoom. A pen or a mouse draws. Fingers never draw, so a palm never
+// and zoom. A page has no edges: the view can move any distance and zoom
+// far in or out. A pen or a mouse draws. Fingers never draw, so a palm never
 // leaves ink while the Pencil is in use:
-//   one finger swipes between pages, or pans when the page is zoomed in;
+//   one finger swipes between pages;
 //   two fingers pinch to zoom and move the page;
 //   two quick two-finger taps in a row undo once.
 // On a computer, Ctrl with the scroll wheel or a trackpad pinch zooms, and
-// scrolling pans a zoomed page.
+// scrolling moves the page.
 //
 // A palm can still reach the glass before the Pencil does and pass for a
 // finger. Three rules keep it from moving the view: a touch is ignored while
@@ -30,7 +35,7 @@ const LONG_PRESS_MS = 500; // how long a still press lasts before it is a long p
 // down puts the view back where it was when the first of them landed.
 //
 // The canvases cover the whole stage. The view is a scale and an offset
-// that place the page inside the stage; every draw call goes through it,
+// that place page units on the stage; every draw call goes through it,
 // so zooming redraws sharp ink instead of stretching pixels.
 export class Board {
   constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap }) {
@@ -43,14 +48,14 @@ export class Board {
     this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap };
     this.press = null; // a press that may become a long press; see startPress
     this.page = null;
-    this.fit = 1; // scale that fits the whole page in the stage
-    this.zoom = 1;
-    this.pan = { x: 0, y: 0 }; // px from the centred position
+    this.fit = 1; // scale that fits the opening frame in the stage
+    this.view = null; // { scale, x, y }: px per page unit, and the stage px of page point 0,0
+    this.size = { w: 0, h: 0 };
     this.dpr = 1;
     this.drawing = null;
     this.touches = new Map();
     this.gesture = null;
-    this.viewBeforeTouch = null; // zoom and pan when the first finger landed
+    this.viewBeforeTouch = null; // the view when the first finger landed
     this.lastPenAt = 0;
     this.lastTwoFingerTapAt = 0;
     this.eraserRadius = 0;
@@ -89,60 +94,56 @@ export class Board {
   // --- View --------------------------------------------------------------
 
   get scale() {
-    return this.fit * this.zoom;
+    return this.view?.scale ?? this.fit;
   }
 
-  // The stage position, in CSS px, of the page's top left corner.
+  // How far the view is zoomed, where 1 fits the opening frame in the stage.
+  get zoom() {
+    return this.scale / this.fit;
+  }
+
+  // The stage position, in CSS px, of page point 0,0.
   origin() {
-    const s = this.scale;
-    return {
-      x: this.stage.clientWidth / 2 + this.pan.x - (PAGE.width * s) / 2,
-      y: this.stage.clientHeight / 2 + this.pan.y - (PAGE.height * s) / 2,
+    return { x: this.view?.x ?? 0, y: this.view?.y ?? 0 };
+  }
+
+  // Fits everything on the page, and at least the opening frame, in the
+  // stage. Before the stage has a size, the view waits for layout.
+  resetView() {
+    const w = this.stage.clientWidth;
+    const h = this.stage.clientHeight;
+    if (!this.page || w <= 0 || h <= 0) return (this.view = null);
+    const home = homeRegion(this.page);
+    const scale = Math.min((w - PAD * 2) / home.width, (h - PAD * 2) / home.height);
+    this.view = {
+      scale,
+      x: w / 2 - (home.x + home.width / 2) * scale,
+      y: h / 2 - (home.y + home.height / 2) * scale,
     };
   }
 
-  resetView() {
-    this.zoom = 1;
-    this.pan = { x: 0, y: 0 };
-  }
-
   // Zooms to `zoom`, keeping the page point under stage point `at` fixed.
-  zoomAt(zoom, at, from = { zoom: this.zoom, origin: this.origin(), at }) {
-    const next = Math.min(MAX_ZOOM, Math.max(1, zoom));
-    const pageX = (from.at.x - from.origin.x) / (this.fit * from.zoom);
-    const pageY = (from.at.y - from.origin.y) / (this.fit * from.zoom);
-    this.zoom = next;
-    const s = this.scale;
-    this.pan.x = at.x - pageX * s - this.stage.clientWidth / 2 + (PAGE.width * s) / 2;
-    this.pan.y = at.y - pageY * s - this.stage.clientHeight / 2 + (PAGE.height * s) / 2;
-    this.clampPan();
+  zoomAt(zoom, at, from = { view: { ...this.view }, at }) {
+    if (!this.view) return;
+    const scale = this.fit * Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    const pageX = (from.at.x - from.view.x) / from.view.scale;
+    const pageY = (from.at.y - from.view.y) / from.view.scale;
+    this.view = { scale, x: at.x - pageX * scale, y: at.y - pageY * scale };
     this.scheduleRedraw();
   }
 
   panBy(dx, dy) {
-    this.pan.x += dx;
-    this.pan.y += dy;
-    this.clampPan();
+    if (!this.view) return;
+    this.view.x += dx;
+    this.view.y += dy;
     this.scheduleRedraw();
-  }
-
-  // A page smaller than the stage stays centred. A larger page can move
-  // until its edge is PAN_MARGIN px inside the stage.
-  clampPan() {
-    const s = this.scale;
-    for (const [axis, size, room] of [
-      ['x', PAGE.width * s, this.stage.clientWidth],
-      ['y', PAGE.height * s, this.stage.clientHeight],
-    ]) {
-      const limit = Math.max(0, (size - room) / 2 + PAN_MARGIN);
-      this.pan[axis] = size + PAD * 2 <= room ? 0 : Math.min(limit, Math.max(-limit, this.pan[axis]));
-    }
   }
 
   // --- Drawing -----------------------------------------------------------
 
-  // A radius above zero shows a ring of that size, in page units, at the
-  // pointer. Zero hides it.
+  // A radius above zero shows a ring of that size at the pointer. The radius
+  // is in page units at zoom 1, and the ring keeps its screen size at any
+  // zoom, as the eraser does. Zero hides it.
   setEraser(radius) {
     this.eraserRadius = radius;
     this.stage.classList.toggle('erasing', radius > 0);
@@ -181,17 +182,19 @@ export class Board {
 
   showRing(e) {
     if (!this.eraserRadius || e.pointerType === 'touch') return;
-    const size = this.eraserRadius * 2 * this.scale;
+    const size = this.eraserRadius * 2 * this.fit;
     const stageRect = this.stage.getBoundingClientRect();
     this.ring.style.width = this.ring.style.height = `${size}px`;
     this.ring.style.transform = `translate(${e.clientX - stageRect.left - size / 2}px, ${e.clientY - stageRect.top - size / 2}px)`;
     this.ring.hidden = false;
   }
 
-  // A different page starts unzoomed. The same page keeps its view.
+  // A different page starts with everything on it in view. The same page
+  // keeps its view.
   setPage(page) {
-    if (page?.id !== this.page?.id) this.resetView();
+    const changed = page?.id !== this.page?.id;
     this.page = page;
+    if (changed || !this.view) this.resetView();
     this.redraw();
   }
 
@@ -205,51 +208,39 @@ export class Board {
       canvas.width = Math.round(w * this.dpr);
       canvas.height = Math.round(h * this.dpr);
     }
-    this.inkClipped = false;
-    this.clampPan();
+    // A resized stage keeps the same page point at its center.
+    if (this.view) {
+      this.view.x += (w - this.size.w) / 2;
+      this.view.y += (h - this.size.h) / 2;
+    } else this.resetView();
+    this.size = { w, h };
     this.redraw();
   }
 
   redraw() {
-    if (!this.page) return;
+    if (!this.page || !this.view) return;
     const { dpr } = this;
     const s = this.scale;
     const o = this.origin();
     const toPageSpace = [s * dpr, 0, 0, s * dpr, o.x * dpr, o.y * dpr];
 
+    // The paper covers the whole stage. The dot grid keeps its dots
+    // between DOT_MIN_PX and twice that apart on screen: zooming out fades
+    // every other dot away, then the grid doubles its spacing. Dots keep
+    // the size they have when the opening frame fits the stage.
     const paper = this.paperCtx;
-    paper.setTransform(1, 0, 0, 1, 0, 0);
-    paper.clearRect(0, 0, this.paperCanvas.width, this.paperCanvas.height);
     paper.setTransform(...toPageSpace);
-    paper.save();
-    paper.shadowColor = 'rgb(0 0 0 / 0.45)';
-    paper.shadowBlur = 30 * dpr;
-    paper.shadowOffsetY = 10 * dpr;
-    paper.fillStyle = this.page.paper.color;
-    paper.fillRect(0, 0, PAGE.width, PAGE.height);
-    paper.restore();
-    drawPaper(paper, this.page.paper);
-    // Pasted items draw on the paper canvas, under the ink, clipped to the
-    // page like the ink.
-    paper.save();
-    paper.beginPath();
-    paper.rect(0, 0, PAGE.width, PAGE.height);
-    paper.clip();
+    const step = dotStep(s, DOT_MIN_PX);
+    const fade = Math.min(1, Math.max(0, (step * s - DOT_MIN_PX) / DOT_MIN_PX));
+    drawPaper(paper, this.page.paper, { region: this.visibleRect(), step, radius: (DOT_RADIUS * this.fit) / s, fade });
     drawItems(paper, this.page);
-    paper.restore();
 
-    // The ink context keeps the page transform and a clip to the page edge
-    // between redraws, so new points can draw straight onto it.
+    // The ink context keeps the page transform between redraws, so new
+    // points can draw straight onto it.
     const ink = this.inkCtx;
-    if (this.inkClipped) ink.restore();
     ink.setTransform(1, 0, 0, 1, 0, 0);
     ink.clearRect(0, 0, this.inkCanvas.width, this.inkCanvas.height);
-    ink.save();
     ink.setTransform(...toPageSpace);
-    ink.beginPath();
-    ink.rect(0, 0, PAGE.width, PAGE.height);
-    ink.clip();
-    this.inkClipped = true;
     drawStrokes(ink, this.page);
     this.placeSelection();
   }
@@ -308,15 +299,11 @@ export class Board {
     this.pull.classList.toggle('visible', p > 0);
   }
 
-  // The part of the page on screen, in page units, clipped to the page.
+  // The part of the page on screen, in page units.
   visibleRect() {
     const s = this.scale;
     const o = this.origin();
-    const x0 = Math.max(0, -o.x / s);
-    const y0 = Math.max(0, -o.y / s);
-    const x1 = Math.min(PAGE.width, (this.stage.clientWidth - o.x) / s);
-    const y1 = Math.min(PAGE.height, (this.stage.clientHeight - o.y) / s);
-    return { x: x0, y: y0, width: Math.max(1, x1 - x0), height: Math.max(1, y1 - y0) };
+    return { x: -o.x / s, y: -o.y / s, width: this.stage.clientWidth / s, height: this.stage.clientHeight / s };
   }
 
   toPage(e) {
@@ -325,7 +312,9 @@ export class Board {
     const x = (e.clientX - rect.left - o.x) / this.scale;
     const y = (e.clientY - rect.top - o.y) / this.scale;
     const pressure = e.pointerType === 'pen' ? e.pressure || 0.5 : 0.6;
-    return [round(x, 10), round(y, 10), round(pressure, 100)];
+    // A tenth of a page unit at zoom 1, and finer as the view zooms in.
+    const digits = Math.max(1, 1 + Math.ceil(Math.log10(this.zoom)));
+    return [Number(x.toFixed(digits)), Number(y.toFixed(digits)), round(pressure, 100)];
   }
 
   // Pointer capture fails for a pointer the browser no longer tracks. The
@@ -418,8 +407,7 @@ export class Board {
   }
 
   // Touch gestures. `gesture.kind` is one of:
-  //   swipe  one finger on an unzoomed page; drags the sheet sideways
-  //   pan    one finger on a zoomed page; moves the page
+  //   swipe  one finger; drags the sheet sideways
   //   pinch  two fingers; zooms around their midpoint and follows it
   //   done   the gesture ended early; waits for every finger to lift
   touchDown(e) {
@@ -427,12 +415,9 @@ export class Board {
     this.touches.set(e.pointerId, this.stagePoint(e));
     this.capture(e.pointerId);
     if (this.touches.size === 1) {
-      this.viewBeforeTouch = { zoom: this.zoom, pan: { ...this.pan } };
+      this.viewBeforeTouch = this.view && { ...this.view };
       const at = this.stagePoint(e);
-      this.gesture =
-        this.zoom > 1.01
-          ? { kind: 'pan', start: at, last: at, moved: false }
-          : { kind: 'swipe', id: e.pointerId, x: at.x, y: at.y, t: performance.now(), dx: 0, dy: 0, point: this.toPage(e) };
+      this.gesture = { kind: 'swipe', id: e.pointerId, x: at.x, y: at.y, t: performance.now(), dx: 0, dy: 0, point: this.toPage(e) };
       this.sheet.style.transition = 'none';
       this.startPress(e);
     } else if (this.touches.size === 2) {
@@ -443,7 +428,7 @@ export class Board {
       this.gesture = {
         kind: 'pinch',
         distance: distance(a, b),
-        from: { zoom: this.zoom, origin: this.origin(), at, pan: { ...this.pan } },
+        from: { zoom: this.zoom, view: this.view && { ...this.view }, at },
         starts: new Map(this.touches),
         t: performance.now(),
         moved: false,
@@ -465,11 +450,6 @@ export class Board {
       const shown = pastLast || pastFirst ? rubberBand(g.dx) : g.dx;
       this.sheet.style.transform = `translateX(${shown}px)`;
       this.setPull(pastLast ? -g.dx / PULL_DISTANCE : 0);
-    } else if (g?.kind === 'pan') {
-      if (!g.moved && distance(g.start, point) <= TAP_SLOP) return;
-      g.moved = true;
-      this.panBy(point.x - g.last.x, point.y - g.last.y);
-      g.last = point;
     } else if (g?.kind === 'pinch' && this.touches.size >= 2) {
       const start = g.starts.get(e.pointerId);
       if (start && distance(start, point) > TAP_SLOP) g.moved = true;
@@ -507,18 +487,12 @@ export class Board {
       // Two fingers that lift quickly without moving are a tap. The view
       // returns to where it was, since any zoom was only finger jitter.
       if (!cancelled && !g.moved && performance.now() - g.t < TAP_MS) {
-        this.zoom = g.from.zoom;
-        this.pan = { ...g.from.pan };
+        this.view = g.from.view;
         this.scheduleRedraw();
         this.gesture = { kind: 'done' };
         if (!this.touches.size) this.gesture = null;
         this.twoFingerTap();
         return;
-      }
-      // A zoom that ends close to the whole page settles on the whole page.
-      if (this.zoom < 1.08) {
-        this.resetView();
-        this.scheduleRedraw();
       }
       this.gesture = { kind: 'done' };
     }
@@ -541,8 +515,7 @@ export class Board {
   // so whatever they did to the view is undone.
   restoreViewBeforeTouch() {
     if (!this.touches.size || !this.viewBeforeTouch) return;
-    this.zoom = this.viewBeforeTouch.zoom;
-    this.pan = { ...this.viewBeforeTouch.pan };
+    this.view = this.viewBeforeTouch;
     this.viewBeforeTouch = null;
     this.scheduleRedraw();
   }
@@ -557,11 +530,7 @@ export class Board {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       this.zoomAt(this.zoom * Math.exp(-e.deltaY * 0.01), this.stagePoint(e));
-      if (this.zoom < 1.02) {
-        this.resetView();
-        this.scheduleRedraw();
-      }
-    } else if (this.zoom > 1.01) {
+    } else {
       e.preventDefault();
       this.panBy(-e.deltaX, -e.deltaY);
     }

@@ -6,8 +6,15 @@
 // Handlers copy and validate everything they keep, so a caller can reuse or
 // mutate the op afterwards without touching stored state.
 
+// A page has no edges. PAGE is the frame a new page opens on, and the
+// smallest area a page shows when its view is reset; the drawing itself
+// can reach any distance from it.
 export const PAGE = { width: 1600, height: 1120 };
 export const GRID = 32;
+
+// Coordinates and sizes are kept finite but otherwise free. Pen widths and
+// text sizes scale with zoom, so they range over many orders of magnitude.
+const FAR = 1e9;
 
 // Graphite: a near-black gray with a mid-gray dot grid.
 export const DEFAULT_PAPER = { color: '#1d1e21', dots: '#7d7f85' };
@@ -52,6 +59,30 @@ export function findStroke(page, id) {
     if (page.strokes[i].id === id) return page.strokes[i];
   }
   return undefined;
+}
+
+// The rectangle that holds everything drawn or pasted on a page, in page
+// units, or null for an empty page. A line reaches past its points by half
+// its widest pressure width.
+export function contentBounds(page) {
+  let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const stroke of page.strokes) {
+    const reach = stroke.width * 0.625;
+    for (const [x, y] of stroke.points) {
+      left = Math.min(left, x - reach);
+      top = Math.min(top, y - reach);
+      right = Math.max(right, x + reach);
+      bottom = Math.max(bottom, y + reach);
+    }
+  }
+  for (const item of pageItems(page)) {
+    left = Math.min(left, item.x);
+    top = Math.min(top, item.y);
+    right = Math.max(right, item.x + item.width);
+    bottom = Math.max(bottom, item.y + item.height);
+  }
+  if (left > right) return null;
+  return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 const handlers = {
@@ -151,8 +182,8 @@ const handlers = {
   'page.move'(space, { pageId, strokeIds = [], itemIds = [], dx, dy }) {
     const page = space.pages[pageId];
     if (!page || !Array.isArray(strokeIds) || !Array.isArray(itemIds)) return false;
-    dx = clamp(Number(dx), -PAGE.width * 2, PAGE.width * 2);
-    dy = clamp(Number(dy), -PAGE.height * 2, PAGE.height * 2);
+    dx = clamp(Number(dx), -FAR, FAR);
+    dy = clamp(Number(dy), -FAR, FAR);
     if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!dx && !dy)) return false;
     const strokes = new Set(strokeIds);
     const items = new Set(itemIds);
@@ -167,8 +198,8 @@ const handlers = {
     }
     for (const item of pageItems(page)) {
       if (!items.has(item.id)) continue;
-      item.x = clamp(item.x + dx, -PAGE.width, PAGE.width * 2);
-      item.y = clamp(item.y + dy, -PAGE.height, PAGE.height * 2);
+      item.x = clamp(item.x + dx, -FAR, FAR);
+      item.y = clamp(item.y + dy, -FAR, FAR);
       moved = true;
     }
     if (!moved) return false;
@@ -213,7 +244,7 @@ function cleanStroke(page, stroke) {
   return {
     id: stroke.id,
     color: isColor(stroke.color) ? stroke.color : '#ffffff',
-    width: clamp(Number(stroke.width) || 4, 0.5, 80),
+    width: clamp(Number(stroke.width) || 4, 1e-6, 1e6),
     points,
   };
 }
@@ -226,11 +257,11 @@ function cleanStroke(page, stroke) {
 // drawn with the even-odd rule.
 function cleanItem(item) {
   if (!isId(item?.id)) return null;
-  const x = clamp(Number(item.x) || 0, -PAGE.width, PAGE.width * 2);
-  const y = clamp(Number(item.y) || 0, -PAGE.height, PAGE.height * 2);
-  const width = clamp(Number(item.width) || 0, 1, PAGE.width * 2);
+  const x = clamp(Number(item.x) || 0, -FAR, FAR);
+  const y = clamp(Number(item.y) || 0, -FAR, FAR);
+  const width = clamp(Number(item.width) || 0, 1e-6, FAR);
   if (item.kind === 'image' && ASSET.test(item.asset)) {
-    const height = clamp(Number(item.height) || 0, 1, PAGE.height * 2);
+    const height = clamp(Number(item.height) || 0, 1e-6, FAR);
     return { id: item.id, kind: 'image', asset: item.asset, x, y, width, height };
   }
   if (item.kind === 'text' && typeof item.text === 'string' && item.text.trim()) {
@@ -241,8 +272,8 @@ function cleanItem(item) {
       x,
       y,
       width,
-      size: clamp(Number(item.size) || 28, 8, 200),
-      height: clamp(Number(item.height) || 28, 1, PAGE.height * 2),
+      size: clamp(Number(item.size) || 28, 1e-6, 1e6),
+      height: clamp(Number(item.height) || 28, 1e-6, FAR),
       color: isColor(item.color) ? item.color : '#ffffff',
     };
   }
@@ -257,7 +288,7 @@ function cleanItem(item) {
       if (points.length >= 3) rings.push(points);
     }
     if (!rings.length) return null;
-    const height = clamp(Number(item.height) || 0, 1, PAGE.height * 2);
+    const height = clamp(Number(item.height) || 0, 1e-6, FAR);
     return { id: item.id, kind: 'fill', x, y, width, height, color: item.color, rings };
   }
   return null;

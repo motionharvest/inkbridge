@@ -7,7 +7,7 @@ import { createColorPicker } from './colorpicker.js';
 import { createSmoother } from './smooth.js';
 import { clearLocal, loadLocal, saveLocal } from './local.js';
 import { Outbox } from './outbox.js';
-import { inkWall, loadImage, measureText, onImageLoad, renderPage } from './render.js';
+import { copyRegion, copyScale, fitAspect, homeRegion, inkWall, loadImage, measureText, onImageLoad, renderPage } from './render.js';
 import { pageSvg } from './svg.js';
 import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pageItems } from './shared/ops.js';
 
@@ -16,8 +16,9 @@ import { applyOp, DEFAULT_PAPER, findNotebook, findStroke, GRID, newId, PAGE, pa
 // slider that changes that slot's size. Tapping the selected color slot
 // opens a color picker for that slot, and the plus button adds a slot. Slots keep their
 // values, so the toolbar stays the same and becomes a personal palette.
-// Sizes are in page units: line width for the pen, circle radius for the
-// eraser.
+// Sizes are in page units at zoom 1: line width for the pen, circle radius
+// for the eraser. Both divide by the zoom when used, so a line or the eraser
+// circle has the same size on screen at any zoom.
 const SIZES = {
   pen: { min: 1, max: 24, step: 0.5, defaults: [2, 4, 8] },
   erase: { min: 4, max: 60, step: 1, defaults: [8, 16, 32] },
@@ -340,6 +341,13 @@ function setLibraryEditing(editing) {
   renderLibrary();
 }
 
+// A cover or grid preview: everything on the page, and at least the
+// opening frame, at the frame's proportions, 256 px wide.
+function thumbnail(page) {
+  const region = fitAspect(homeRegion(page), PAGE.width / PAGE.height);
+  return renderPage(page, 256 / region.width, region, { dotPx: 5 });
+}
+
 function renderLibrary() {
   if (!space.notebooks.length) libraryEditing = false;
   els.notebooks.replaceChildren();
@@ -354,7 +362,7 @@ function renderLibrary() {
   for (const notebook of space.notebooks) {
     const card = document.createElement('div');
     card.className = 'card';
-    const cover = renderPage(space.pages[notebook.pageIds[0]], 0.16);
+    const cover = thumbnail(space.pages[notebook.pageIds[0]]);
     cover.className = 'cover';
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -483,7 +491,7 @@ function renderGrid({ flip = false } = {}) {
       tile.className = 'grid-page';
       tile.dataset.id = pageId;
       tile.classList.toggle('current', pageId === current.pageId);
-      const thumb = renderPage(space.pages[pageId], 0.16);
+      const thumb = thumbnail(space.pages[pageId]);
       thumb.className = 'thumb';
       const label = document.createElement('span');
       label.className = 'grid-label';
@@ -881,8 +889,9 @@ function startStroke(point) {
   selecting = null;
   if (tool.mode === 'erase') return startErase(point);
   if (tool.mode === 'select') return startSelect(point);
-  const stroke = { id: newId(), color: penColor(), width: penSize(), points: [point] };
-  live = { pageId: current.pageId, strokeId: stroke.id, unsent: [], smoother: createSmoother(point) };
+  const zoom = board.zoom;
+  const stroke = { id: newId(), color: penColor(), width: penSize() / zoom, points: [point] };
+  live = { pageId: current.pageId, strokeId: stroke.id, unsent: [], smoother: createSmoother(point, zoom) };
   if (commit({ type: 'stroke.start', pageId: current.pageId, stroke })) {
     pushHistory(current.pageId, { kind: 'draw', strokeId: stroke.id });
   }
@@ -984,7 +993,8 @@ function endSelect() {
   }
   const bounds = lassoBounds(selection.lasso);
   // A tap or a short scribble is not a lasso.
-  if (bounds.width < 12 || bounds.height < 12) return setSelection(null);
+  const least = 12 / board.zoom;
+  if (bounds.width < least || bounds.height < least) return setSelection(null);
   setSelection({ lasso: selection.lasso, ...lassoContents(space.pages[current.pageId], selection.lasso) });
 }
 
@@ -996,16 +1006,11 @@ function setSelection(next, { closed = true } = {}) {
 }
 
 // The region Copy renders for a selection: the rectangle around the
-// outline, with room for line width, kept on the page.
+// outline, with room for line width.
 function selectionRegion() {
   const b = lassoBounds(selection.lasso);
-  const pad = 8;
-  const x0 = Math.max(0, b.x - pad);
-  const y0 = Math.max(0, b.y - pad);
-  const x1 = Math.min(PAGE.width, b.x + b.width + pad);
-  const y1 = Math.min(PAGE.height, b.y + b.height + pad);
-  if (x1 - x0 < 1 || y1 - y0 < 1) return null;
-  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  const pad = Math.max(b.width, b.height) * 0.02;
+  return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
 }
 
 // A long press inside a selection opens a menu with Copy and Remove
@@ -1044,7 +1049,7 @@ function hover(point) {
 // line as it was before the first cut, and which pieces came from it, so
 // undo can swap the surviving pieces back for the original lines.
 function startErase(point) {
-  erasing = { pageId: current.pageId, radius: eraserSize(), last: point, originals: new Map(), rootOf: new Map() };
+  erasing = { pageId: current.pageId, radius: eraserSize() / board.zoom, last: point, originals: new Map(), rootOf: new Map() };
   eraseAt(point);
 }
 
@@ -1166,12 +1171,29 @@ function endColorDrag(e, cancelled = false) {
   if (!cancelled && els.stage.contains(target)) fillAt(board.toPage(e), drag.color);
 }
 
+// The fill reads the ink on screen, one cell per CSS pixel, so it works at
+// any zoom. A shape must be closed within the part of the page on screen.
+// The shape comes back in cells and is scaled back to page units.
 function fillAt([x, y], color) {
   const page = space?.pages[current.pageId];
   if (!page) return;
-  const shape = fillShape(inkWall(page), PAGE.width, PAGE.height, x, y);
+  const view = board.visibleRect();
+  // A very large screen reads the ink at a coarser grid, so the fill stays
+  // under its cell limit.
+  const scale = board.scale * Math.min(1, Math.sqrt(3_500_000 / (view.width * view.height * board.scale ** 2)));
+  const { wall, width, height } = inkWall(page, view, scale);
+  const shape = fillShape(wall, width, height, (x - view.x) * scale, (y - view.y) * scale);
   if (!shape) return toast('Drop the color inside a closed shape to fill it.');
-  const item = { id: newId(), kind: 'fill', color, ...shape };
+  const item = {
+    id: newId(),
+    kind: 'fill',
+    color,
+    x: view.x + shape.x / scale,
+    y: view.y + shape.y / scale,
+    width: shape.width / scale,
+    height: shape.height / scale,
+    rings: shape.rings.map((ring) => ring.map(([px, py]) => [px / scale, py / scale])),
+  };
   if (commit({ type: 'item.add', pageId: page.id, item })) pushHistory(page.id, { kind: 'item', itemId: item.id });
 }
 
@@ -1193,22 +1215,24 @@ const COPY_FORMATS = {
 async function copyPage(format = 'png') {
   const page = space?.pages[current.pageId];
   if (!page) return;
-  // A selection copies only its rectangle, without the dot grid, so only
-  // the ink and pasted items show on the paper color.
-  const region = selection && selectionRegion();
+  // A whole page copies the rectangle around everything on it. A selection
+  // copies only its rectangle, without the dot grid, so only the ink and
+  // pasted items show on the paper color.
+  const region = selection ? selectionRegion() : copyRegion(page);
   const { name, event, type } = COPY_FORMATS[format];
   let data, blob;
   if (format === 'svg') {
     data = pageSvg(page, {
-      ...(region ? { region, dots: false } : {}),
+      region,
+      dots: !selection,
       images: await imageDataUrls(page),
       measure: document.createElement('canvas').getContext('2d'),
     });
     blob = new Blob([data], { type });
   } else {
-    // A selected region renders at twice page resolution, so a small region
-    // still pastes as a usable image.
-    const canvas = region ? renderPage(page, 2, region, { dots: false }) : renderPage(page, 1);
+    // A selection renders at twice page resolution, so a small region still
+    // pastes as a usable image.
+    const canvas = renderPage(page, copyScale(region, selection ? 2 : 1), region, { dots: !selection });
     blob = await new Promise((resolve) => canvas.toBlob(resolve, type));
     data = await blob.arrayBuffer();
   }
@@ -1332,24 +1356,27 @@ async function shrink(file) {
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
 }
 
-// An image keeps its pixel size in page units, shrunk to fit inside the
-// part of the page on screen, and lands in the middle of it.
+// An image keeps its pixel size at zoom 1, so it looks the same size at
+// any zoom, shrunk to fit inside the part of the page on screen, and lands
+// in the middle of it.
 async function placeImage(asset) {
   const img = loadImage(asset);
   if (!img.complete) await new Promise((resolve) => img.addEventListener('load', resolve, { once: true }));
   if (!img.naturalWidth) return toast('The pasted image could not be loaded.');
   const view = board.visibleRect();
-  const fit = Math.min(1, (view.width * 0.85) / img.naturalWidth, (view.height * 0.85) / img.naturalHeight);
+  const fit = Math.min(1 / board.zoom, (view.width * 0.85) / img.naturalWidth, (view.height * 0.85) / img.naturalHeight);
   addItem({ kind: 'image', asset, width: img.naturalWidth * fit, height: img.naturalHeight * fit });
 }
 
-// Text takes the pen color and wraps to at most 900 page units, or less
-// when the page is zoomed in.
+// Text takes the pen color. At zoom 1 it is 28 page units tall and wraps
+// at 900 units; at other zooms both divide by the zoom, so text looks the
+// same size on screen. It wraps sooner when the screen is narrower.
 function placeText(text) {
-  const size = 28;
+  const zoom = board.zoom;
+  const size = 28 / zoom;
   const view = board.visibleRect();
   const clean = text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').trimEnd();
-  const { width, height } = measureText(clean, size, Math.min(900, view.width * 0.85));
+  const { width, height } = measureText(clean, size, Math.min(900 / zoom, view.width * 0.85));
   addItem({ kind: 'text', text: clean, size, color: penColor(), width, height });
 }
 
@@ -1365,9 +1392,10 @@ function addItem({ height, ...fields }) {
   // A paste onto the same spot as an earlier item steps down and right, so
   // pasting twice shows two items, not one on top of the other.
   const page = space.pages[current.pageId];
-  while (pageItems(page).some((other) => Math.abs(other.x - item.x) < 1 && Math.abs(other.y - item.y) < 1)) {
-    item.x += GRID;
-    item.y += GRID;
+  const step = GRID / board.zoom;
+  while (pageItems(page).some((other) => Math.abs(other.x - item.x) < step / 32 && Math.abs(other.y - item.y) < step / 32)) {
+    item.x += step;
+    item.y += step;
   }
   const pageId = current.pageId;
   if (commit({ type: 'item.add', pageId, item })) pushHistory(pageId, { kind: 'item', itemId: item.id });
