@@ -17,6 +17,11 @@ const TAP_SLOP = 12; // px a finger may move and still count as a tap
 const PULL_DISTANCE = 140; // px of finger travel that arms a new page
 const DOUBLE_TAP_MS = 400; // longest gap between the two taps of a double tap
 const LONG_PRESS_MS = 500; // how long a still press lasts before it is a long press
+// A Pencil held lightly can lose contact for a few milliseconds mid-line, and
+// the line breaks into dots. A Pencil that lands again within JOIN_MS of
+// lifting and within JOIN_PX of where it lifted continues the same stroke.
+const JOIN_MS = 60;
+const JOIN_PX = 48;
 
 // The board shows one page and turns pointer input into strokes, swipes,
 // and zoom. A page has no edges: the view can move any distance and zoom
@@ -53,6 +58,7 @@ export class Board {
     this.size = { w: 0, h: 0 };
     this.dpr = 1;
     this.drawing = null;
+    this.lifted = null; // a Pencil stroke that may continue; see up
     this.touches = new Map();
     this.gesture = null;
     this.viewBeforeTouch = null; // the view when the first finger landed
@@ -311,7 +317,9 @@ export class Board {
     const o = this.origin();
     const x = (e.clientX - rect.left - o.x) / this.scale;
     const y = (e.clientY - rect.top - o.y) / this.scale;
-    const pressure = e.pointerType === 'pen' ? e.pressure || 0.5 : 0.6;
+    // A Pencil reports 0 on the sample where it lifts. That is a real
+    // reading, so the line thins there instead of ending in a blob.
+    const pressure = e.pointerType === 'pen' ? e.pressure : 0.6;
     // A tenth of a page unit at zoom 1, and finer as the view zooms in.
     const digits = Math.max(1, 1 + Math.ceil(Math.log10(this.zoom)));
     return [Number(x.toFixed(digits)), Number(y.toFixed(digits)), round(pressure, 100)];
@@ -336,6 +344,8 @@ export class Board {
     if (!this.page) return;
     if (e.pointerType === 'touch') return this.touchDown(e);
     if (e.button !== 0) return;
+    if (this.rejoin(e)) return;
+    this.endLifted();
     // A new stroke can start before the last stroke's pointerup arrives.
     // End the old stroke so the new one is never dropped.
     if (this.drawing) {
@@ -400,10 +410,37 @@ export class Board {
     if (this.drawing?.id === e.pointerId) {
       this.drawing = null;
       if (e.pointerType === 'pen') this.ring.hidden = true;
-      this.callbacks.onStrokeEnd();
+      if (e.pointerType === 'pen' && !cancelled) {
+        // The stroke ends only once JOIN_MS passes with no landing nearby.
+        const timer = setTimeout(() => this.endLifted(), JOIN_MS);
+        this.lifted = { at: this.stagePoint(e), t: e.timeStamp, timer };
+      } else this.callbacks.onStrokeEnd();
       return;
     }
     if (this.touches.has(e.pointerId)) this.touchUp(e, cancelled);
+  }
+
+  // Continues the lifted stroke when the Pencil lands again soon and close
+  // by. The gap between the two points is drawn as part of the line.
+  rejoin(e) {
+    const lifted = this.lifted;
+    if (!lifted || e.pointerType !== 'pen') return false;
+    if (e.timeStamp - lifted.t > JOIN_MS || distance(lifted.at, this.stagePoint(e)) > JOIN_PX) return false;
+    clearTimeout(lifted.timer);
+    this.lifted = null;
+    this.lastPenAt = Date.now();
+    this.drawing = { id: e.pointerId };
+    this.capture(e.pointerId);
+    this.showRing(e);
+    this.callbacks.onStrokeExtend([this.toPage(e)]);
+    return true;
+  }
+
+  endLifted() {
+    if (!this.lifted) return;
+    clearTimeout(this.lifted.timer);
+    this.lifted = null;
+    this.callbacks.onStrokeEnd();
   }
 
   // Touch gestures. `gesture.kind` is one of:
