@@ -1,6 +1,7 @@
 import { io } from '/socket.io/socket.io.esm.min.js';
 import { Board } from './board.js';
 import { cutStrokes } from './erase.js';
+import { penLog, startPenLog } from './penlog.js';
 import { fillShape } from './fill.js';
 import { insideLasso, lassoBounds, lassoContents } from './lasso.js';
 import { createColorPicker } from './colorpicker.js';
@@ -135,6 +136,7 @@ const outbox = new Outbox(savedHere ? saved.outbox : undefined);
 let synced = false;
 
 const socket = io({ auth: (cb) => cb({ code: localStorage.getItem(KEY.code) }) });
+startPenLog((batch) => socket.connected && socket.emit('penlog', batch));
 
 socket.on('connect', () => {
   setStatus();
@@ -211,6 +213,7 @@ socket.on('peers', (count) => {
 });
 
 socket.on('op', (op) => {
+  penLog('remote-op', { op: op.type, pageId: op.pageId });
   if (space && applyOp(space, op)) afterOp(op);
 });
 
@@ -892,6 +895,7 @@ function startStroke(point) {
   const zoom = board.zoom;
   const stroke = { id: newId(), color: penColor(), width: penSize() / zoom, points: [point] };
   live = { pageId: current.pageId, strokeId: stroke.id, unsent: [], smoother: createSmoother(point, zoom) };
+  penLog('stroke-start', { strokeId: stroke.id, zoom: Math.round(zoom * 1000) / 1000, point });
   if (commit({ type: 'stroke.start', pageId: current.pageId, stroke })) {
     pushHistory(current.pageId, { kind: 'draw', strokeId: stroke.id });
   }
@@ -929,6 +933,8 @@ function endStroke() {
   if (live) {
     const last = live.smoother.end();
     if (last) addPoints([last]);
+    const stroke = space.pages[live.pageId]?.strokes.find((s) => s.id === live.strokeId);
+    penLog('stroke-end', { strokeId: live.strokeId, points: stroke?.points.length, last: stroke?.points.at(-1) });
   }
   flushStroke();
   live = null;

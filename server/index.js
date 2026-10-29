@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -143,6 +144,14 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
       } catch (error) {
         ack?.({ ok: false, error: error.message });
       }
+    });
+
+    // A temporary pen log; see public/js/penlog.js.
+    socket.on('penlog', (batch) => {
+      if (!Array.isArray(batch?.entries)) return;
+      const device = /iPad|Macintosh/.test(socket.handshake.headers['user-agent'] ?? '') ? 'ipad' : 'computer';
+      const lines = batch.entries.map((entry) => JSON.stringify({ device, wall: batch.at - batch.now + entry.t, ...entry }));
+      fs.appendFile(path.join(dataDir, 'pen.log'), lines.join('\n') + '\n', () => {});
     });
 
     socket.on('disconnect', () => {

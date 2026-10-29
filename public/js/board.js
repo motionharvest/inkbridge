@@ -1,4 +1,5 @@
 import { PAGE } from './shared/ops.js';
+import { penLog } from './penlog.js';
 import { DOT_RADIUS, dotStep, drawItems, drawPaper, drawStroke, drawStrokes, homeRegion } from './render.js';
 
 const SWIPE_DISTANCE = 70;
@@ -248,6 +249,12 @@ export class Board {
     ink.clearRect(0, 0, this.inkCanvas.width, this.inkCanvas.height);
     ink.setTransform(...toPageSpace);
     drawStrokes(ink, this.page);
+    penLog('redraw', {
+      zoom: Math.round(this.zoom * 1000) / 1000,
+      strokes: this.page.strokes.length,
+      canvas: [this.inkCanvas.width, this.inkCanvas.height],
+      origin: [Math.round(o.x), Math.round(o.y)],
+    });
     this.placeSelection();
   }
 
@@ -342,6 +349,7 @@ export class Board {
 
   down(e) {
     if (!this.page) return;
+    penLog('down', { ...this.describe(e), drawing: this.drawing?.id ?? null, lifted: this.liftedGap(e) });
     if (e.pointerType === 'touch') return this.touchDown(e);
     if (e.button !== 0) return;
     if (this.rejoin(e)) return;
@@ -357,7 +365,7 @@ export class Board {
       this.restoreViewBeforeTouch();
     }
     this.endGesture();
-    this.drawing = { id: e.pointerId };
+    this.drawing = { id: e.pointerId, moves: 0, samples: 0 };
     this.capture(e.pointerId);
     this.showRing(e);
     this.callbacks.onStrokeStart(this.toPage(e));
@@ -396,6 +404,10 @@ export class Board {
       if (e.pointerType === 'pen') this.lastPenAt = Date.now();
       const events = e.getCoalescedEvents?.() ?? [];
       const points = (events.length ? events : [e]).map((ev) => this.toPage(ev));
+      this.drawing.moves++;
+      this.drawing.samples += points.length;
+      const zero = points.filter((p) => p[2] === 0).length;
+      if (zero) penLog('zero-pressure', { id: e.pointerId, zero, of: points.length });
       this.callbacks.onStrokeExtend(points);
       return;
     }
@@ -407,6 +419,8 @@ export class Board {
 
   up(e, cancelled = false) {
     this.cancelPress(e);
+    const d = this.drawing?.id === e.pointerId ? this.drawing : null;
+    penLog(e.type, { ...this.describe(e), drawing: Boolean(d), moves: d?.moves, samples: d?.samples, touch: this.touches.has(e.pointerId) });
     if (this.drawing?.id === e.pointerId) {
       this.drawing = null;
       if (e.pointerType === 'pen') this.ring.hidden = true;
@@ -428,8 +442,9 @@ export class Board {
     if (e.timeStamp - lifted.t > JOIN_MS || distance(lifted.at, this.stagePoint(e)) > JOIN_PX) return false;
     clearTimeout(lifted.timer);
     this.lifted = null;
+    penLog('rejoin', this.liftedGap(e, lifted));
     this.lastPenAt = Date.now();
-    this.drawing = { id: e.pointerId };
+    this.drawing = { id: e.pointerId, moves: 0, samples: 0 };
     this.capture(e.pointerId);
     this.showRing(e);
     this.callbacks.onStrokeExtend([this.toPage(e)]);
@@ -438,9 +453,22 @@ export class Board {
 
   endLifted() {
     if (!this.lifted) return;
+    penLog('end', {});
     clearTimeout(this.lifted.timer);
     this.lifted = null;
     this.callbacks.onStrokeEnd();
+  }
+
+  // The parts of a pointer event the pen log records.
+  describe(e) {
+    const at = this.stagePoint(e);
+    return { type: e.pointerType, id: e.pointerId, x: Math.round(at.x), y: Math.round(at.y), p: e.pressure, buttons: e.buttons, et: Math.round(e.timeStamp * 10) / 10 };
+  }
+
+  // How long ago and how far away the last Pencil lift was, for the log.
+  liftedGap(e, lifted = this.lifted) {
+    if (!lifted) return null;
+    return { ms: Math.round((e.timeStamp - lifted.t) * 10) / 10, px: Math.round(distance(lifted.at, this.stagePoint(e))) };
   }
 
   // Touch gestures. `gesture.kind` is one of:
@@ -448,7 +476,7 @@ export class Board {
   //   pinch  two fingers; zooms around their midpoint and follows it
   //   done   the gesture ended early; waits for every finger to lift
   touchDown(e) {
-    if (this.drawing || Date.now() - this.lastPenAt < PEN_QUIET_MS) return;
+    if (this.drawing || Date.now() - this.lastPenAt < PEN_QUIET_MS) return penLog('touch-ignored', { id: e.pointerId });
     this.touches.set(e.pointerId, this.stagePoint(e));
     this.capture(e.pointerId);
     if (this.touches.size === 1) {
