@@ -30,3 +30,13 @@ test('cutStrokes reaches the edge of wide lines', () => {
   assert.equal(cutStrokes(page, [50, 18], 10).length, 1);
   assert.equal(cutStrokes(page, [50, 25], 10).length, 0);
 });
+
+test('a small eraser far zoomed in cuts at its own edge', () => {
+  const center = [10.0051, 20.0037];
+  const reach = 0.002;
+  const pieces = cutPoints(pts([10.0001, 20.0007], [10.0101, 20.0067]), center, reach);
+  assert.equal(pieces.length, 2);
+  for (const cut of [pieces[0].at(-1), pieces[1][0]]) {
+    assert.ok(Math.abs(Math.hypot(cut[0] - center[0], cut[1] - center[1]) - reach) < reach / 50);
+  }
+});

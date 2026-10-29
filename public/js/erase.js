@@ -25,6 +25,10 @@ export function cutStrokes(page, center, radius) {
 // circle, or null when the circle does not touch the line.
 export function cutPoints(points, center, reach) {
   const inside = (p) => Math.hypot(p[0] - center[0], p[1] - center[1]) <= reach;
+  // A cut point is rounded to a hundredth of the reach. A fixed tenth of a
+  // page unit moved cuts far from the circle once the view was zoomed in and
+  // the eraser was smaller than that.
+  const factor = 10 ** Math.max(1, Math.ceil(Math.log10(100 / reach)));
   if (points.length === 1) return inside(points[0]) ? [] : null;
 
   const pieces = [];
@@ -41,10 +45,10 @@ export function cutPoints(points, center, reach) {
     touched = true;
     const [enter, leave] = span;
     if (piece.length) {
-      piece.push(lerp(a, b, enter));
+      piece.push(lerp(a, b, enter, factor));
       pieces.push(piece);
     }
-    piece = leave < 1 ? [lerp(a, b, leave), b] : [];
+    piece = leave < 1 ? [lerp(a, b, leave, factor), b] : [];
   }
   if (!touched) return null;
   pieces.push(piece);
@@ -70,10 +74,10 @@ function insideSpan(a, b, center, reach) {
   return enter < leave ? [enter, leave] : null;
 }
 
-function lerp(a, b, t) {
+function lerp(a, b, t, factor) {
   return [
-    Math.round((a[0] + (b[0] - a[0]) * t) * 10) / 10,
-    Math.round((a[1] + (b[1] - a[1]) * t) * 10) / 10,
+    Math.round((a[0] + (b[0] - a[0]) * t) * factor) / factor,
+    Math.round((a[1] + (b[1] - a[1]) * t) * factor) / factor,
     a[2] + (b[2] - a[2]) * t,
   ];
 }
