@@ -44,14 +44,14 @@ const JOIN_PX = 48;
 // that place page units on the stage; every draw call goes through it,
 // so zooming redraws sharp ink instead of stretching pixels.
 export class Board {
-  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap }) {
+  constructor(stage, { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap, onViewChange }) {
     this.stage = stage;
     this.sheet = stage.querySelector('.sheet');
     this.paperCanvas = stage.querySelector('.paper');
     this.inkCanvas = stage.querySelector('.ink');
     this.paperCtx = this.paperCanvas.getContext('2d');
     this.inkCtx = this.inkCanvas.getContext('2d');
-    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap };
+    this.callbacks = { onStrokeStart, onStrokeExtend, onStrokeEnd, onSwipe, onTwoFingerDoubleTap, onHover, onLongPress, onTap, onViewChange };
     this.press = null; // a press that may become a long press; see startPress
     this.page = null;
     this.fit = 1; // scale that fits the opening frame in the stage
@@ -136,14 +136,47 @@ export class Board {
     const pageX = (from.at.x - from.view.x) / from.view.scale;
     const pageY = (from.at.y - from.view.y) / from.view.scale;
     this.view = { scale, x: at.x - pageX * scale, y: at.y - pageY * scale };
-    this.scheduleRedraw();
+    this.viewChanged();
   }
 
   panBy(dx, dy) {
     if (!this.view) return;
     this.view.x += dx;
     this.view.y += dy;
+    this.viewChanged();
+  }
+
+  // Where this device is looking, in terms every device shares: the page
+  // point at the center of the stage, and the zoom. Screens of different
+  // sizes then show the same place at the same relative size.
+  camera() {
+    if (!this.page || !this.view) return null;
+    const { w, h } = this.size;
+    return {
+      pageId: this.page.id,
+      cx: (w / 2 - this.view.x) / this.view.scale,
+      cy: (h / 2 - this.view.y) / this.view.scale,
+      zoom: this.zoom,
+    };
+  }
+
+  // Moves the view to a camera from another device. A camera for a
+  // different page, or one that arrives mid-gesture, is ignored, so a
+  // device never fights the fingers on its own glass. It is not reported
+  // back, so two devices do not echo a view between them.
+  setCamera(camera) {
+    if (!camera || !this.page || camera.pageId !== this.page.id || !this.size.w) return;
+    if (this.touches.size || this.drawing) return;
+    const scale = this.fit * Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom));
+    const { w, h } = this.size;
+    this.view = { scale, x: w / 2 - camera.cx * scale, y: h / 2 - camera.cy * scale };
     this.scheduleRedraw();
+  }
+
+  // Every change a person makes to the view redraws and is reported.
+  viewChanged() {
+    this.scheduleRedraw();
+    this.callbacks.onViewChange?.(this.camera());
   }
 
   // --- Drawing -----------------------------------------------------------
@@ -553,7 +586,7 @@ export class Board {
       // returns to where it was, since any zoom was only finger jitter.
       if (!cancelled && !g.moved && performance.now() - g.t < TAP_MS) {
         this.view = g.from.view;
-        this.scheduleRedraw();
+        this.viewChanged();
         this.gesture = { kind: 'done' };
         if (!this.touches.size) this.gesture = null;
         this.twoFingerTap();
@@ -582,7 +615,7 @@ export class Board {
     if (!this.touches.size || !this.viewBeforeTouch) return;
     this.view = this.viewBeforeTouch;
     this.viewBeforeTouch = null;
-    this.scheduleRedraw();
+    this.viewChanged();
   }
 
   endGesture() {
@@ -607,7 +640,7 @@ export class Board {
 
   zoomReset() {
     this.resetView();
-    this.scheduleRedraw();
+    this.viewChanged();
   }
 }
 

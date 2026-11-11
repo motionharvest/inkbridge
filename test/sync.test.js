@@ -119,3 +119,34 @@ test('a numbered change is confirmed, applied once, and remembered across a reco
   server.store.get(space.code);
   assert.equal(server.store.lastApplied(space.code, client), 3);
 });
+
+test('panning and zooming follow to the other devices on the page', async () => {
+  const ipad = connect();
+  const { space } = await call(ipad, 'space:create');
+  const desktop = connect();
+  await call(desktop, 'space:join', { code: space.code });
+
+  const pageId = newId();
+  const followed = next(desktop, 'camera');
+  ipad.emit('camera', { pageId, cx: 812.5, cy: -40, zoom: 3.2 });
+  assert.deepEqual(await followed, { pageId, cx: 812.5, cy: -40, zoom: 3.2 });
+
+  // A camera that is not a place on a page is dropped, not relayed.
+  let relayedBad = false;
+  desktop.once('camera', () => (relayedBad = true));
+  ipad.emit('camera', { pageId, cx: 'left', cy: 0, zoom: 1 });
+  ipad.emit('camera', { pageId, cx: 0, cy: 0, zoom: 0 });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(relayedBad, false);
+
+  // A device that joins later starts where the others are looking.
+  const late = connect(space.code);
+  const state = await call(late, 'space:join', { code: space.code });
+  assert.deepEqual(state.camera, { pageId, cx: 812.5, cy: -40, zoom: 3.2 });
+
+  // Opening another view starts from the whole page, so the camera clears.
+  ipad.emit('view', { notebookId: 'n', pageId: newId() });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const after = await call(connect(space.code), 'space:join', { code: space.code });
+  assert.equal(after.camera, null);
+});

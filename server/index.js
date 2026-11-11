@@ -14,6 +14,7 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join(root, 'data') } = {}) {
   const store = new SpaceStore(dataDir);
+  const cameras = new Map(); // space code → the last camera any device sent; kept in memory only
   const assets = new AssetStore(path.join(dataDir, 'assets'));
   const app = express();
   app.use(express.static(path.join(root, 'public')));
@@ -61,6 +62,7 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
         ok: true,
         space,
         view: store.views.get(space.code) ?? null,
+        camera: cameras.get(space.code) ?? null,
         applied: store.lastApplied(space.code, request?.client),
       });
     });
@@ -97,7 +99,25 @@ export function startServer({ port = 5180, host = '0.0.0.0', dataDir = path.join
       else if (typeof view?.pageId === 'string') clean = { screen: 'page', notebookId: String(view.notebookId), pageId: view.pageId };
       else return;
       store.views.set(code, clean);
+      // A new view starts from the whole page, so a camera from before it
+      // no longer applies.
+      cameras.delete(code);
       socket.to(code).emit('view', clean);
+    });
+
+    // Where a device is looking on a page: the page point at the center of
+    // its screen and its zoom, where 1 fits the opening frame. Every other
+    // device on that page moves its view to match, so panning and zooming
+    // follow the way pages do. A device that joins later starts there too.
+    // Cameras are sent many times a second, so a lost one is not resent.
+    socket.on('camera', (camera) => {
+      const code = socket.data.code;
+      if (!code) return;
+      const { pageId, cx, cy, zoom } = camera ?? {};
+      if (typeof pageId !== 'string' || ![cx, cy, zoom].every(Number.isFinite) || zoom <= 0) return;
+      const clean = { pageId, cx, cy, zoom };
+      cameras.set(code, clean);
+      socket.to(code).volatile.emit('camera', clean);
     });
 
     // A device sends a page as PNG bytes. The server puts it on this

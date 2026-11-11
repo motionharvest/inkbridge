@@ -109,6 +109,7 @@ const board = new Board(els.stage, {
   onTwoFingerDoubleTap: () => undo(),
   onHover: hover,
   onLongPress: longPress,
+  onViewChange: sendCamera,
   onTap: (point) => {
     // A finger tap outside a selection clears it, like a Pencil tap.
     if (selection && !insideLasso(selection.lasso, point[0], point[1])) setSelection(null);
@@ -161,6 +162,7 @@ function resync(res) {
   outbox.confirm(res.applied ?? 0);
   for (const { op } of outbox.queue) applyOp(res.space, op);
   loadSpace(res.space, res.view);
+  board.setCamera(res.camera);
   synced = true;
   for (const entry of outbox.queue) transmit(entry);
 }
@@ -185,6 +187,25 @@ function transmit({ seq, op }) {
 // long ago.
 function sendView(view) {
   socket.volatile.emit('view', view);
+}
+
+// Panning and zooming follow too. A camera (the page point at the center of
+// the screen, and the zoom) goes out at most every CAMERA_MS while the view
+// moves, and the last one always goes, so the other devices settle exactly
+// where this one stopped. Like a view, a camera is dropped while offline.
+const CAMERA_MS = 33;
+let cameraTimer = null;
+let cameraPending = null;
+function sendCamera(camera) {
+  if (!camera) return;
+  if (cameraTimer) return void (cameraPending = camera);
+  socket.volatile.emit('camera', camera);
+  cameraTimer = setTimeout(() => {
+    cameraTimer = null;
+    const next = cameraPending;
+    cameraPending = null;
+    if (next) sendCamera(next);
+  }, CAMERA_MS);
 }
 
 // Writes the saved copy at most twice a second, so drawing does not copy the
@@ -221,6 +242,10 @@ socket.on('op', (op) => {
 // and whichever view any device opens, the others open too.
 socket.on('view', (view) => {
   if (space) showView(view);
+});
+
+socket.on('camera', (camera) => {
+  if (space) board.setCamera(camera);
 });
 
 function loadSpace(nextSpace, view) {
