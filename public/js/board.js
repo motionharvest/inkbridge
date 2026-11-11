@@ -21,8 +21,11 @@ const LONG_PRESS_MS = 500; // how long a still press lasts before it is a long p
 // A Pencil held lightly can lose contact for a few milliseconds mid-line, and
 // the line breaks into dots. A Pencil that lands again within JOIN_MS of
 // lifting and within JOIN_PX of where it lifted continues the same stroke.
-const JOIN_MS = 100;
-const JOIN_PX = 48;
+// The pen log on the iPad shows deliberate lifts in fast handwriting, such as
+// the gap between the stem and the bar of a t, starting at about 60 ms and
+// 8 px, so the window stays below both.
+const JOIN_MS = 40;
+const JOIN_PX = 16;
 
 // The board shows one page and turns pointer input into strokes, swipes,
 // and zoom. A page has no edges: the view can move any distance and zoom
